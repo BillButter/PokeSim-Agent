@@ -157,6 +157,24 @@ uses `SDL_VIDEODRIVER=dummy`—no X server is required. PyBoy is installed throu
 the `emulator` extra. The web UI still works without PyBoy (demo mode), but
 real ROMs need it.
 
+### Podman Quadlet with registry auto-updates
+
+[`deploy/pokesim-agent.container`](deploy/pokesim-agent.container) runs the same
+published image as a systemd service with `AutoUpdate=registry`. Podman's
+`podman-auto-update.timer` checks `ghcr.io/billbutter/pokesim-agent:latest`,
+pulls new digests, and restarts the service automatically.
+
+```bash
+mkdir -p ~/pokesim/{roms,data} ~/.config/containers/systemd
+cp deploy/pokesim-agent.container ~/.config/containers/systemd/
+systemctl --user daemon-reload
+systemctl --user start pokesim-agent.service
+systemctl --user enable --now podman-auto-update.timer
+```
+
+See [`deploy/README.md`](deploy/README.md) for rootful installation, AI
+credential drop-ins, pinning a version tag, and update verification.
+
 ## Configuration
 
 Environment variables are read at startup. AI values can also be changed in
