@@ -46,6 +46,11 @@ read-only mount is imported into the Adventure Library at startup.
 `pokesim` user (UID/GID 1000), so `~/pokesim/data` remains writable even if your
 host UID is not 1000.
 
+The unit sets `PUBLIC_URL=http://127.0.0.1:8000` because PokeSim rejects requests
+whose `Host` header differs from that address. If you change `PublishPort` or
+put the library behind a reverse proxy, change `PUBLIC_URL` to the exact
+browser-visible address too.
+
 ## Auto-update
 
 The unit contains:

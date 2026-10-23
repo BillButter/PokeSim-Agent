@@ -25,6 +25,9 @@ UserNS=keep-id:uid=1000,gid=1000
 Environment=HOST=0.0.0.0
 Environment=PORT=8000
 Environment=DATA_DIR=/data
+# Must match the address in your browser exactly, including the port.
+# Change this together with PublishPort if you expose the library remotely.
+Environment=PUBLIC_URL=http://127.0.0.1:8000
 # Every .gb/.gbc/.zip in /roms is imported into the library at startup.
 Environment=ROM_DIR=/roms
 Environment=AI_MODE=default
