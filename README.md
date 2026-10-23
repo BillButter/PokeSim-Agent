@@ -136,7 +136,7 @@ file from GitHub as `docker-compose.yml`. Supported `.gb`, `.gbc` and `.zip`
 files in `roms/` are imported automatically at startup. The mount is read-only;
 saves, settings and generated game data live in `data/`.
 
-Open [localhost:8000](http://localhost:8000). The first adventure start downloads
+Open [127.0.0.1:8000](http://127.0.0.1:8000). The first adventure start downloads
 about 2 MB of reference data unless the image can reach GitHub. To run a vision
 adventure, set the endpoint before starting:
 
