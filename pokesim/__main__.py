@@ -106,3 +106,28 @@ def main(argv=None):
 
 if __name__ == '__main__':
     main()
+
+
+def debug_cmd():
+    """Debug entry point for troubleshooting startup issues."""
+    import traceback
+    try:
+        print('DEBUG: Starting debug mode', flush=True)
+        from . import config
+        print(f'DEBUG: config loaded, PORT={getattr(config,"PORT",None)}', flush=True)
+        config.validate()
+        print('DEBUG: config validated', flush=True)
+        from .app import manager
+        print('DEBUG: manager imported', flush=True)
+        return manager.main(['--data-dir', '/tmp/pokesim-debug', '--port', '18123'])
+    except Exception as e:
+        print(f'ERROR: {e}', flush=True)
+        traceback.print_exc()
+        return 1
+
+
+if __name__ == '__main__':
+    if len(sys.argv) > 1 and sys.argv[1] == '--debug':
+        sys.argv.pop(1)
+        sys.exit(debug_cmd() or 0)
+    main()

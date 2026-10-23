@@ -1094,3 +1094,13 @@ def main(argv=None):
 
 if __name__ == '__main__':
     main()
+
+
+# Debug helper
+def debug_info():
+    import sys, platform
+    return {
+        'python': sys.version,
+        'platform': platform.platform(),
+        'cwd': os.getcwd(),
+    }
