@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0d1411">
+  <meta name="description" content="PokeSim Agent · a vision-model player for Pokémon Red, Blue and Yellow">
+  <title>PokeSim Agent</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <a class="skip" href="#main">Skip to the game</a>
+
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true"><i></i><i></i></span>
+      <span class="brand-text">PokeSim <small>Agent</small></span>
+    </div>
+
+    <label class="picker">
+      <span>Game</span>
+      <select id="game-select" aria-label="Game"></select>
+    </label>
+
+    <button class="btn btn--ghost" id="refresh-games" title="Rescan the roms folder for .gb and .gbc files">
+      Rescan
+    </button>
+
+    <label class="picker picker--ai">
+      <span>AI player</span>
+      <select id="ai-mode" aria-label="AI player for this game">
+        <option value="default">Default · built-in autopilot</option>
+        <option value="vision">Vision agent · OpenAI-compatible</option>
+        <option value="manual">Manual only</option>
+      </select>
+    </label>
+
+    <div class="connection" id="connection" role="status" aria-live="polite">
+      <i class="lamp" aria-hidden="true"></i><span id="connection-text">Connecting</span>
+    </div>
+
+    <button class="btn btn--ghost" id="settings-toggle" aria-haspopup="dialog" aria-controls="settings-drawer">
+      Settings
+    </button>
+  </header>
+
+  <main id="main" class="layout">
+    <section class="stage" aria-label="Emulator">
+      <div class="screen-frame">
+        <div class="screen-head">
+          <span class="eyebrow">On screen</span>
+          <strong id="game-title">Loading…</strong>
+          <span class="chip" id="demo-chip" hidden>Demo</span>
+          <span class="screen-location" id="screen-location">—</span>
+        </div>
+        <div class="screen-bezel">
+          <canvas id="screen" width="160" height="144" aria-label="Live game screen"></canvas>
+          <div class="screen-overlay" id="screen-overlay" hidden>
+            <span id="overlay-title">Paused</span>
+            <small id="overlay-detail">The game is waiting.</small>
+          </div>
+          <div class="frame-corner" id="frame-corner">160×144</div>
+        </div>
+        <div class="screen-foot">
+          <span class="live"><i class="lamp" aria-hidden="true"></i><span id="game-status">Stopped</span></span>
+          <span id="agent-status-line">Ready</span>
+          <span id="frame-rate">—</span>
+        </div>
+      </div>
+
+      <div class="control-bar">
+        <button class="btn btn--primary" id="take-control">Take control</button>
+        <button class="btn" id="pause">Pause</button>
+        <button class="btn" id="reset-agent" title="Clear the agent's rolling memory">Clear memory</button>
+        <span class="control-hint" id="control-hint">The agent is playing. Press a control to take over.</span>
+      </div>
+
+      <div class="controller" aria-label="Game Boy controller">
+        <div class="dpad" role="group" aria-label="Directional pad">
+          <button class="pad pad--up" data-button="up" aria-label="Up">▲</button>
+          <button class="pad pad--left" data-button="left" aria-label="Left">◀</button>
+          <button class="pad pad--right" data-button="right" aria-label="Right">▶</button>
+          <button class="pad pad--down" data-button="down" aria-label="Down">▼</button>
+          <span class="dpad-center" aria-hidden="true"></span>
+        </div>
+        <div class="ab" role="group" aria-label="A and B">
+          <button class="round" data-button="b" aria-label="B">B</button>
+          <button class="round round--a" data-button="a" aria-label="A">A</button>
+        </div>
+        <div class="menu-buttons" role="group" aria-label="Menu buttons">
+          <button class="pill" data-button="select" aria-label="Select">Select</button>
+          <button class="pill" data-button="start" aria-label="Start">Start</button>
+        </div>
+      </div>
+
+      <details class="keys">
+        <summary>Keyboard controls</summary>
+        <div class="key-grid">
+          <span>Move</span><span><kbd>←</kbd><kbd>↑</kbd><kbd>↓</kbd><kbd>→</kbd></span>
+          <span>A</span><span><kbd>Z</kbd> or <kbd>K</kbd></span>
+          <span>B</span><span><kbd>X</kbd> or <kbd>J</kbd></span>
+          <span>Start</span><span><kbd>Enter</kbd></span>
+          <span>Select</span><span><kbd>Shift</kbd></span>
+        </div>
+        <p>Taking any manual action switches the game to <strong>Take control</strong> immediately.</p>
+      </details>
+    </section>
+
+    <aside class="side" aria-label="Live dashboard">
+      <section class="panel panel--state">
+        <div class="panel-head">
+          <h2>Live state</h2>
+          <span class="chip" id="battle-chip">Overworld</span>
+        </div>
+        <div class="trainer-row">
+          <div>
+            <span class="eyebrow">Trainer</span>
+            <strong id="trainer">—</strong>
+          </div>
+          <div class="stat-inline"><span>Badges</span><strong id="badges">0/8</strong></div>
+        </div>
+        <div class="badge-bank" id="badge-bank" aria-label="Badges"></div>
+        <div class="stat-grid">
+          <div><span>Location</span><strong id="location">—</strong><small id="coords"></small></div>
+          <div><span>Money</span><strong id="money">₽0</strong><small>Pokédollars</small></div>
+          <div><span>Play time</span><strong id="playtime">00:00:00</strong><small>in game</small></div>
+          <div><span>Pokédex</span><strong id="pokedex">0 owned</strong><small id="pokedex-seen">0 seen</small></div>
+        </div>
+        <div class="party-head"><span class="eyebrow">Party</span><span id="party-count">0 / 6</span></div>
+        <ul class="party" id="party"></ul>
+      </section>
+
+      <section class="panel panel--agent">
+        <div class="panel-head">
+          <h2>Agent</h2>
+          <span class="chip chip--agent" id="agent-chip">idle</span>
+        </div>
+        <div class="agent-meta">
+          <span id="agent-model">No model configured</span>
+          <span id="agent-turn">turn 0</span>
+        </div>
+        <p class="thought" id="agent-thought">The agent has not taken a turn yet.</p>
+        <div class="plan-head"><span class="eyebrow">Active plan</span></div>
+        <ol class="plan" id="agent-plan"><li class="muted">No plan yet.</li></ol>
+        <div class="last-action"><span class="eyebrow">Last actions</span><code id="agent-action">—</code></div>
+        <p class="agent-error" id="agent-error" hidden></p>
+      </section>
+
+      <section class="panel panel--memory">
+        <div class="panel-head">
+          <h2>Rolling memory</h2>
+          <span class="muted" id="memory-count">0 turns</span>
+        </div>
+        <ol class="memory" id="memory"></ol>
+      </section>
+
+      <section class="panel panel--events">
+        <div class="panel-head"><h2>Event log</h2></div>
+        <ol class="events" id="events"></ol>
+      </section>
+    </aside>
+  </main>
+
+  <footer class="footer">
+    <span>PokeSim Agent · a fork of <a href="https://github.com/afk-sapien/PokeSim" target="_blank" rel="noreferrer">PokeSim</a></span>
+    <span>Bring your own ROM. Runs locally.</span>
+  </footer>
+
+  <div class="scrim" id="scrim" hidden></div>
+  <aside class="drawer" id="settings-drawer" role="dialog" aria-modal="true" aria-labelledby="settings-title" hidden>
+    <div class="drawer-head">
+      <div><span class="eyebrow">Configuration</span><h2 id="settings-title">Model endpoint</h2></div>
+      <button class="icon-btn" id="settings-close" aria-label="Close settings">×</button>
+    </div>
+    <form id="settings-form">
+      <label class="field">
+        <span>Preset</span>
+        <select id="preset">
+          <option value="">Choose a preset…</option>
+          <option value="ollama">Ollama (local)</option>
+          <option value="lmstudio">LM Studio (local)</option>
+          <option value="vllm">vLLM / LocalAI (local)</option>
+          <option value="openai">OpenAI</option>
+          <option value="custom">Custom</option>
+        </select>
+        <small>Presets only fill the fields; nothing is sent until you save.</small>
+      </label>
+
+      <label class="field">
+        <span>Base URL</span>
+        <input id="base-url" type="url" placeholder="http://localhost:11434/v1" autocomplete="off" spellcheck="false">
+        <small>OpenAI-compatible API root. <code>/v1</code> is added if omitted.</small>
+      </label>
+
+      <label class="field">
+        <span>API key <em id="key-state"></em></span>
+        <input id="api-key" type="password" placeholder="Leave blank to keep the saved key" autocomplete="new-password">
+        <small>Optional for local servers. Stored locally in <code>data/settings.json</code>.</small>
+      </label>
+
+      <div class="field-row">
+        <label class="field">
+          <span>Model ID</span>
+          <input id="model" type="text" placeholder="llava" autocomplete="off" spellcheck="false">
+        </label>
+        <label class="field">
+          <span>Poll interval (s)</span>
+          <input id="poll-interval" type="number" min="0.5" max="120" step="0.5" value="4">
+        </label>
+      </div>
+
+      <details class="advanced">
+        <summary>Advanced context settings</summary>
+        <div class="field-row">
+          <label class="field"><span>Context turns</span><input id="context-turns" type="number" min="1" max="40" value="8"></label>
+          <label class="field"><span>Image history</span><input id="image-history" type="number" min="0" max="8" value="2"></label>
+        </div>
+        <div class="field-row">
+          <label class="field"><span>Max actions / turn</span><input id="max-actions" type="number" min="1" max="24" value="8"></label>
+          <label class="field"><span>Max frames / action</span><input id="max-frames" type="number" min="1" max="1200" value="240"></label>
+        </div>
+        <div class="field-row">
+          <label class="field"><span>Temperature</span><input id="temperature" type="number" min="0" max="2" step="0.1" value="0.2"></label>
+          <label class="field"><span>Timeout (s)</span><input id="timeout" type="number" min="1" max="600" value="120"></label>
+        </div>
+      </details>
+
+      <fieldset class="overrides">
+        <legend>This game only <small>optional</small></legend>
+        <p>Leave blank to inherit the global endpoint. Useful when one adventure uses a local model and another uses a hosted one.</p>
+        <label class="field"><span>Base URL</span><input id="override-base-url" type="url" placeholder="Use global" autocomplete="off" spellcheck="false"></label>
+        <div class="field-row">
+          <label class="field"><span>Model ID</span><input id="override-model" type="text" placeholder="Use global" autocomplete="off" spellcheck="false"></label>
+          <label class="field"><span>Poll interval (s)</span><input id="override-poll" type="number" min="0.5" max="120" step="0.5" placeholder="Use global"></label>
+        </div>
+        <button type="button" class="btn btn--small" id="clear-overrides">Clear game overrides</button>
+      </fieldset>
+
+      <div class="test-row">
+        <button type="button" class="btn" id="test-endpoint">Test endpoint</button>
+        <span class="test-result" id="test-result" role="status"></span>
+      </div>
+
+      <div class="drawer-actions">
+        <button type="submit" class="btn btn--primary" id="save-settings">Save settings</button>
+        <button type="button" class="btn btn--ghost" id="settings-cancel">Cancel</button>
+      </div>
+    </form>
+  </aside>
+
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+  <script src="/static/app.js" defer></script>
+</body>
+</html>

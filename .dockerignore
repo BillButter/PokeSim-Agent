@@ -1,0 +1,16 @@
+.git
+.gitignore
+.venv
+venv
+__pycache__
+*.py[cod]
+.pytest_cache
+tests
+docs
+data
+roms
+.env
+*.png
+*.gb
+*.gbc
+*.zip

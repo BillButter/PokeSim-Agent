@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Local configuration and secrets
+.env
+data/settings.json
+data/games.json
+
+# Runtime state, extracted ROMs and emulator saves
+data/games/
+data/roms/
+roms/*
+!roms/.gitkeep
+
+# Editors / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
