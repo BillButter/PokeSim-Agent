@@ -66,9 +66,13 @@ class Repository:
     # ---------------- AI settings ----------------
     def get_ai(self) -> AIConfig:
         with self._lock:
-            stored = self._read(self.settings_path, {}).get("ai", {})
-        values = self.settings.ai.with_overrides(stored or {})
+            payload = self._read(self.settings_path, {})
+            stored = payload.get("ai", {}) if isinstance(payload, dict) else {}
+        values = self.settings.ai.with_overrides(stored if isinstance(stored, dict) else {})
         # Keep values usable even when a hand-edited file contains silly values.
+        values.base_url = str(values.base_url or "")
+        values.model = str(values.model or "")
+        values.api_key = str(values.api_key or "")
         values.poll_interval = min(120.0, max(0.5, float(values.poll_interval)))
         values.max_context_turns = min(40, max(1, int(values.max_context_turns)))
         values.image_history = min(8, max(0, int(values.image_history)))
@@ -85,6 +89,8 @@ class Repository:
                 {key: value for key, value in updates.items() if value is not None}
             )
             payload = self._read(self.settings_path, {})
+            if not isinstance(payload, dict):
+                payload = {}
             payload["ai"] = merged.as_dict()
             self._write(self.settings_path, payload, private=True)
             return merged
@@ -168,6 +174,8 @@ class Repository:
         if not profile:
             return config
         overrides = profile.get("overrides") or {}
+        if not isinstance(overrides, dict):
+            return config
         # Empty strings mean "clear this override", not "use an empty endpoint".
         clean = {
             key: value

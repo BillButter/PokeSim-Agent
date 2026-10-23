@@ -80,6 +80,12 @@ def test_repeat_and_sequence_forms():
     ]
 
 
+def test_done_accepts_strings_without_truthy_false_bug():
+    assert parse_decision('{"actions": [{"buttons": "a"}], "done": "false"}').done is False
+    assert parse_decision('{"actions": [{"buttons": "a"}], "done": "yes"}').done is True
+    assert parse_decision('{"actions": [{"buttons": "a"}], "finished": 0}').done is False
+
+
 def test_limits_are_enforced():
     decision = parse_decision(
         '{"actions": [{"buttons": "a", "frames": 9999}, {"buttons": "b"}, {"buttons": "up"}]}',

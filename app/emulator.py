@@ -271,7 +271,13 @@ class PyBoyEmulator(BaseEmulator):
         save_dir.mkdir(parents=True, exist_ok=True)
         suffix = rom_path.suffix.lower() if rom_path.suffix else ".gb"
         local_rom = save_dir / f"game{suffix}"
-        if not local_rom.exists() or local_rom.stat().st_size != rom_path.stat().st_size:
+        # Refresh the local copy when the source has been replaced, even if the
+        # replacement happens to have the same size (common for 1 MiB ROMs).
+        if (
+            not local_rom.exists()
+            or local_rom.stat().st_size != rom_path.stat().st_size
+            or local_rom.stat().st_mtime < rom_path.stat().st_mtime
+        ):
             shutil.copy2(rom_path, local_rom)
         # PyBoy looks for a .ram next to the ROM; keep the upstream file too.
         for candidate in (rom_path.with_suffix(rom_path.suffix + ".ram"), rom_path.with_suffix(".ram"), rom_path.with_suffix(".sav")):

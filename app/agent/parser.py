@@ -159,6 +159,16 @@ def _int(value: Any, default: int) -> int:
         return default
 
 
+def _bool(value: Any, default: bool = False) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on", "done"}
+    return default
+
+
 def _actions_from_string(value: str, max_frames: int) -> list[AgentAction]:
     actions: list[AgentAction] = []
     for part in _split_sequence(value):
@@ -309,7 +319,7 @@ def parse_decision(
     if not actions:
         raise ParseError("The JSON decision had no buttons to press", raw)
 
-    done = bool(payload.get("done", payload.get("finished", False)))
+    done = _bool(payload.get("done", payload.get("finished", False)))
     return AgentDecision(
         thought=thought or "No reasoning supplied.",
         plan=plan,
