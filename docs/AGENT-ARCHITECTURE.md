@@ -108,8 +108,10 @@ records:
 | `AI_TEMPERATURE` | Sampling temperature (default 0.2) |
 | `AI_TIMEOUT` | Request timeout in seconds (default 120) |
 
-`AI_MODE` sets the default for new adventures; the per-adventure value is stored
+Each managed adventure defaults to `default`; its selected AI player is stored
 in the upstream adventure settings and can be changed while the adventure runs.
+The standalone runtime also accepts `AI_MODE`, but the managed library does not
+use it.
 
 A missing endpoint or model is not fatal. The library still works, `default` and
 `manual` adventures still run, and a vision adventure reports the configuration

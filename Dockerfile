@@ -23,7 +23,7 @@ ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 \
     PORT=8000 HOST=0.0.0.0 \
     SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy PATH=/app/.venv/bin:$PATH \
     NUMBA_CACHE_DIR=/tmp/numba-cache \
-    AI_MODE=default AI_BASE_URL= AI_API_KEY= AI_MODEL= AI_MAX_FRAMES=120
+    AI_BASE_URL= AI_API_KEY= AI_MODEL= AI_MAX_FRAMES=120
 RUN apt-get update && apt-get upgrade -y \
     && apt-get install -y --no-install-recommends git ca-certificates \
     && rm -rf /var/lib/apt/lists/* \

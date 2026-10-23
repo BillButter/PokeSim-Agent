@@ -30,7 +30,6 @@ Environment=DATA_DIR=/data
 Environment=PUBLIC_URL=http://127.0.0.1:8000
 # Every .gb/.gbc/.zip in /roms is imported into the library at startup.
 Environment=ROM_DIR=/roms
-Environment=AI_MODE=default
 
 # Vision endpoint defaults. Override these in a drop-in instead of editing
 # this file, e.g.

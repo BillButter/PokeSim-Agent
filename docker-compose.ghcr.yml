@@ -20,7 +20,6 @@ services:
       DATA_DIR: /data
       # Every .gb/.gbc/.zip in /roms is imported into the library at startup.
       ROM_DIR: /roms
-      AI_MODE: "${AI_MODE:-default}"
       AI_BASE_URL: "${AI_BASE_URL:-}"
       AI_MODEL: "${AI_MODEL:-}"
       AI_API_KEY: "${AI_API_KEY:-}"
