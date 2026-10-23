@@ -1,0 +1,49 @@
+# Pull-only deployment using the image published to GitHub Container Registry.
+#
+#   mkdir -p roms data
+#   docker compose -f docker-compose.ghcr.yml up -d
+#
+# Copy this file (and optionally .env) to any machine with Docker. No source
+# checkout or local build is required. PokeSim-Agent is designed to run on
+# linux/amd64; see the README for details.
+
+services:
+  pokesim-agent:
+    image: ${POKESIM_IMAGE:-ghcr.io/billbutter/pokesim-agent:latest}
+    container_name: pokesim-agent
+    ports:
+      # Loopback only by default. Set POKESIM_HOST_BIND=0.0.0.0 only if you
+      # understand that the dashboard has no authentication.
+      - "${POKESIM_HOST_BIND:-127.0.0.1}:${POKESIM_HOST_PORT:-8000}:8000"
+    environment:
+      POKESIM_HOST: 0.0.0.0
+      POKESIM_PORT: "8000"
+      POKESIM_ROMS_DIR: /roms
+      POKESIM_DATA_DIR: /data
+      POKESIM_DEMO_GAME: "${POKESIM_DEMO_GAME:-true}"
+      POKESIM_FRAME_FPS: "${POKESIM_FRAME_FPS:-12}"
+      POKESIM_EMULATION_SPEED: "${POKESIM_EMULATION_SPEED:-0}"
+      POKESIM_DEFAULT_AI_MODE: "${POKESIM_DEFAULT_AI_MODE:-default}"
+      POKESIM_LOG_LEVEL: "${POKESIM_LOG_LEVEL:-INFO}"
+      AI_BASE_URL: "${AI_BASE_URL:-http://host.docker.internal:11434/v1}"
+      AI_MODEL: "${AI_MODEL:-llava}"
+      AI_API_KEY: "${AI_API_KEY:-}"
+      AI_POLL_INTERVAL: "${AI_POLL_INTERVAL:-4}"
+      AI_MAX_CONTEXT_TURNS: "${AI_MAX_CONTEXT_TURNS:-8}"
+      AI_IMAGE_HISTORY: "${AI_IMAGE_HISTORY:-2}"
+      AI_MAX_ACTIONS: "${AI_MAX_ACTIONS:-8}"
+      AI_MAX_FRAMES: "${AI_MAX_FRAMES:-240}"
+      AI_TEMPERATURE: "${AI_TEMPERATURE:-0.2}"
+      AI_TIMEOUT: "${AI_TIMEOUT:-120}"
+    volumes:
+      # Put .gb/.gbc files in ./roms (or set POKESIM_ROMS_PATH).
+      - "${POKESIM_ROMS_PATH:-./roms}:/roms:ro"
+      # Settings, profiles, extracted ROMs and PyBoy saves persist here.
+      - "${POKESIM_DATA_PATH:-./data}:/data"
+    extra_hosts:
+      # Lets the container reach a model server running on the host.
+      - "host.docker.internal:host-gateway"
+    # The image runs as UID/GID 1000. If your host user differs, set
+    # POKESIM_UID/POKESIM_GID and uncomment the next line.
+    # user: "${POKESIM_UID:-1000}:${POKESIM_GID:-1000}"
+    restart: unless-stopped

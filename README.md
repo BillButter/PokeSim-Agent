@@ -102,6 +102,40 @@ untouched; extracted copies and PyBoy saves go under
 
 ## Docker
 
+### Run the published image (no source checkout)
+
+Every push to `main` and every `v*` tag is built by
+[`.github/workflows/docker-publish.yml`](.github/workflows/docker-publish.yml)
+and published to GitHub Container Registry as
+`ghcr.io/billbutter/pokesim-agent:latest`.
+
+On any machine with Docker:
+
+```bash
+mkdir -p roms data
+# put .gb/.gbc files in ./roms (mounted read-only)
+curl -fsSLO https://raw.githubusercontent.com/BillButter/PokeSim-Agent/main/docker-compose.ghcr.yml
+docker compose -f docker-compose.ghcr.yml up -d
+docker compose -f docker-compose.ghcr.yml logs -f
+```
+
+No Python, ROM tooling, or local build is needed. The compose file accepts
+these environment overrides:
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `POKESIM_IMAGE` | `ghcr.io/billbutter/pokesim-agent:latest` | Image/tag to run |
+| `POKESIM_HOST_BIND` | `127.0.0.1` | Host bind address |
+| `POKESIM_HOST_PORT` | `8000` | Host port |
+| `POKESIM_ROMS_PATH` | `./roms` | Host ROM directory |
+| `POKESIM_DATA_PATH` | `./data` | Host data directory |
+| `POKESIM_UID` / `POKESIM_GID` | `1000` | Container user (see below) |
+
+The GHCR package is public, so anonymous `docker pull` works. The image is
+built for `linux/amd64`.
+
+### Build locally
+
 ```bash
 cp .env.example .env
 # put ROMs in ./roms (mounted read-only)
