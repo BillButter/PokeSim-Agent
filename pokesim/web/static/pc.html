@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en" data-theme="auto">
+<head>
+<meta charset="utf-8">
+<meta name="pokesim-base" content="${game_base}">
+<meta name="pokesim-adventure" content="${adventure_id}">
+<meta name="pokesim-sprites" content="${sprite_version}">
+<script src="${game_base}/static/routes.js?v=offers-1"></script>
+<script src="${game_base}/static/types.js?v=glow-1"></script>
+<script src="${game_base}/static/panel.js?v=panel-4"></script>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#DDDAD0" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#20241F" media="(prefers-color-scheme: dark)">
+<meta name="description" content="Explore your party and boxes and inspect each Pokémon’s natural potential and training.">
+<title>PC · pokesim</title>
+<link rel="icon" href="${game_base}/static/favicon.svg" type="image/svg+xml">
+<link rel="preload" href="${game_base}/static/fonts/pokesim-panel.woff2?v=2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="${game_base}/static/tokens.css?v=panel-1">
+<link rel="stylesheet" href="${game_base}/static/panel.css?v=pass2-1">
+<link rel="stylesheet" href="${game_base}/static/mon-grid.css?v=locks-1">
+<link rel="stylesheet" href="${game_base}/static/panel-pc.css?v=dex-copies-1">
+<link rel="alternate" type="application/atom+xml" title="pokesim events" href="${game_base}/feed.xml">
+<link rel="stylesheet" href="${game_base}/static/types.css?v=glow-2">
+</head>
+<body data-page="pc">
+<a class="skip-link" href="#main">Skip to Pokémon storage</a>
+
+<header class="rail">
+<div class="shell rail-inner">
+<a class="brandplate" href="${brand_href}" aria-label="${brand_label}" title="${brand_label}"><span class="mark" aria-hidden="true"></span><span><span class="wordmark">PokeSim</span><span class="model" id="app-version">${app_version}</span></span></a>
+${library_nav}<nav aria-label="Main navigation"><a href="${game_base}/">Live</a><a href="${game_base}/pokedex">Pokédex</a><a href="${game_base}/pc" aria-current="page">PC</a><a href="${game_base}/trading">Trading</a><a href="${game_base}/journal">Journal</a><a href="${game_base}/stats">Stats</a></nav>
+<span class="connection" id="connection"><i class="lamp" aria-hidden="true"></i><span id="status">Connecting</span></span>
+</div>
+</header>
+
+<main id="main" class="shell">
+<header class="identity pc-summary">
+<div class="who"><p class="micro">Pokémon storage system</p><h1>PC</h1></div>
+<div class="stats">
+<div class="stat"><span class="micro">Stored</span><strong class="readout" id="pc-total">0 / 240</strong></div>
+<div class="stat"><span class="micro">New catches</span><strong class="readout" id="pc-active">Box 1</strong></div>
+</div>
+</header>
+
+
+<div class="pc-toolbar panel">
+<div class="field pc-view-field"><span class="micro" id="pc-view-label">View</span><div class="segmented view-switch" role="group" aria-labelledby="pc-view-label"><button type="button" id="pc-boxes-view" aria-pressed="true">Boxes</button><button type="button" id="pc-all-view" aria-pressed="false">All Pokémon</button></div></div>
+<label class="field field--grow" for="pc-search"><span class="micro">Find Pokémon</span><input id="pc-search" type="search" placeholder="Name or Pokédex number" autocomplete="off"></label>
+<label class="field" for="pc-rating"><span class="micro">DV rating</span><span class="select"><select id="pc-rating"><option value="all">All ratings</option><option value="shiny">★ Shiny partners</option><option value="3plus">3★ and better</option><option value="4">4★ Perfect</option><option value="3">3★</option><option value="2">2★</option><option value="1">1★</option><option value="unknown">Unknown DVs</option></select></span></label>
+<input id="pc-scope" type="hidden" value="box">
+<label class="field" id="pc-sort-control" hidden for="pc-sort"><span class="micro">Sort by</span><span class="select"><select id="pc-sort"><option value="box">Location and slot</option><option value="battle_power">Battle Power</option><option value="power">Stat Power</option><option value="stat_total">Stat total</option><option value="level">Level</option><option value="HP">Max HP</option><option value="Attack">Attack</option><option value="Defense">Defense</option><option value="Speed">Speed</option><option value="Special">Special</option><option value="dv_stars">DV star rating</option><option value="dvs">Total DVs</option><option value="stat_exp">Total stat experience</option><option value="experience">Total experience</option><option value="dex">Pokédex number</option><option value="name">Species name</option><option value="nick">Nickname</option></select></span></label>
+<label class="field" id="pc-order-control" hidden for="pc-order"><span class="micro">Order</span><span class="select"><select id="pc-order"><option value="asc">Lowest first</option><option value="desc">Highest first</option></select></span></label>
+<span class="pc-count micro" id="pc-count">0 Pokémon</span>
+</div>
+
+<section id="pc-workspace" class="pc-workspace" aria-label="PC storage">
+<div id="pc-sidebar" class="pc-sidebar">
+<label class="field mobile-box-control" for="mobile-box"><span class="micro">Party or box</span><select id="mobile-box"></select></label>
+<h2 class="legend pc-sidebar-head">Party and boxes</h2>
+<div id="box-picker" class="box-picker" role="group" aria-label="Choose party or a storage box"></div>
+</div>
+<div class="pc-content">
+<div class="column-head pc-head"><div class="pc-head-title"><h2 class="legend legend--ink" id="pc-heading">Box 1</h2><span class="micro" id="pc-note">Stored partners</span></div></div>
+<div id="pc-grid" class="pc-grid" aria-busy="true"><p class="vh">Opening the PC…</p><div class="skeleton-card" aria-hidden="true"></div><div class="skeleton-card" aria-hidden="true"></div><div class="skeleton-card" aria-hidden="true"></div><div class="skeleton-card" aria-hidden="true"></div><div class="skeleton-card" aria-hidden="true"></div><div class="skeleton-card" aria-hidden="true"></div><div class="skeleton-card" aria-hidden="true"></div><div class="skeleton-card" aria-hidden="true"></div><div class="skeleton-card" aria-hidden="true"></div><div class="skeleton-card" aria-hidden="true"></div><div class="skeleton-card" aria-hidden="true"></div><div class="skeleton-card" aria-hidden="true"></div><div class="skeleton-card" aria-hidden="true"></div><div class="skeleton-card" aria-hidden="true"></div><div class="skeleton-card" aria-hidden="true"></div><div class="skeleton-card" aria-hidden="true"></div><div class="skeleton-card" aria-hidden="true"></div><div class="skeleton-card" aria-hidden="true"></div><div class="skeleton-card" aria-hidden="true"></div><div class="skeleton-card" aria-hidden="true"></div></div>
+</div>
+</section>
+</main>
+
+<dialog id="pc-detail" class="pc-detail" aria-labelledby="pc-detail-name"><button id="pc-close" class="key close-detail" aria-label="Close Pokémon details">Close</button><div id="pc-detail-body"></div><div id="pc-trade-action" class="pc-trade-action"></div></dialog>
+
+<footer class="plate-foot">
+<div class="shell">
+<p>A small window into a very big adventure.</p>
+<div class="theme" role="group" aria-label="Colour theme"><button data-theme-choice="light" aria-pressed="false">Light</button><button data-theme-choice="auto" aria-pressed="false">Auto</button><button data-theme-choice="dark" aria-pressed="false">Dark</button></div>
+<div class="links"><a href="${game_base}/feed.xml">Atom feed</a><a href="https://github.com/afk-sapien/PokeSim" target="_blank" rel="noreferrer">GitHub</a></div>
+</div>
+</footer>
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+<script src="${game_base}/static/mon-grid.js?v=locks-1"></script>
+<script src="${game_base}/static/pc.js?v=locks-1"></script>
+</body>
+</html>

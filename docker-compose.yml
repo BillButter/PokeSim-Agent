@@ -7,36 +7,35 @@ services:
     container_name: pokesim-agent
     ports:
       # Loopback only. Change to "8000:8000" only if you understand that the
-      # dashboard has no authentication.
+      # Adventure Library has no authentication.
       - "127.0.0.1:8000:8000"
     environment:
-      POKESIM_HOST: 0.0.0.0
-      POKESIM_PORT: "8000"
-      POKESIM_ROMS_DIR: /roms
-      POKESIM_DATA_DIR: /data
-      POKESIM_DEMO_GAME: "true"
-      POKESIM_FRAME_FPS: "12"
-      POKESIM_EMULATION_SPEED: "0"
-      POKESIM_DEFAULT_AI_MODE: "default"
-      POKESIM_LOG_LEVEL: "INFO"
-      AI_BASE_URL: "${AI_BASE_URL:-http://host.docker.internal:11434/v1}"
-      AI_MODEL: "${AI_MODEL:-llava}"
+      HOST: 0.0.0.0
+      PORT: "8000"
+      DATA_DIR: /data
+      # Every .gb/.gbc/.zip in /roms is imported into the library at startup.
+      ROM_DIR: /roms
+      AI_MODE: "${AI_MODE:-default}"
+      AI_BASE_URL: "${AI_BASE_URL:-}"
+      AI_MODEL: "${AI_MODEL:-}"
       AI_API_KEY: "${AI_API_KEY:-}"
       AI_POLL_INTERVAL: "${AI_POLL_INTERVAL:-4}"
       AI_MAX_CONTEXT_TURNS: "${AI_MAX_CONTEXT_TURNS:-8}"
       AI_IMAGE_HISTORY: "${AI_IMAGE_HISTORY:-2}"
       AI_MAX_ACTIONS: "${AI_MAX_ACTIONS:-8}"
-      AI_MAX_FRAMES: "${AI_MAX_FRAMES:-240}"
+      AI_MAX_FRAMES: "${AI_MAX_FRAMES:-120}"
       AI_TEMPERATURE: "${AI_TEMPERATURE:-0.2}"
       AI_TIMEOUT: "${AI_TIMEOUT:-120}"
+      PUBLIC_URL: "${PUBLIC_URL:-http://127.0.0.1:8000}"
     volumes:
-      # ROMs are mounted read-only; PyBoy saves go to /data instead.
+      # ROMs are mounted read-only. Saves, settings, extracted sprites and
+      # generated game data are written to /data.
       - ./roms:/roms:ro
       - ./data:/data
     extra_hosts:
       # Lets a model server on the host be reached as host.docker.internal.
       - "host.docker.internal:host-gateway"
-    # If ./data is owned by a different local user, set POKESIM_UID/POKESIM_GID
-    # in .env and uncomment the next line.
+    # The image runs as UID/GID 1000. If your host user differs, either chown
+    # ./data or uncomment the next line and set POKESIM_UID/POKESIM_GID.
     # user: "${POKESIM_UID:-1000}:${POKESIM_GID:-1000}"
     restart: unless-stopped

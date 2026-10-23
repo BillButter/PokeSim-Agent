@@ -1,0 +1,245 @@
+"""Check bootstrap failures without downloading or changing the user's tools."""
+import json
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import tomllib
+
+import pytest
+
+from tools.check_quickstart import compose_command, compose_environment
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_installers_select_the_current_release():
+    version = tomllib.loads((ROOT / 'pyproject.toml').read_text())['project']['version']
+    assert f'    version={version}\n' in (ROOT / 'install.sh').read_text()
+    assert f"$version = '{version}'\n" in (ROOT / 'install.ps1').read_text()
+
+
+@pytest.fixture
+def shell_environment(tmp_path):
+    if os.name == 'nt':
+        pytest.skip('POSIX bootstrap tests run on Linux and macOS')
+    commands = tmp_path / 'commands'
+    commands.mkdir()
+    home = tmp_path / 'user with spaces'
+    home.mkdir()
+    env = {**os.environ, 'HOME': str(home), 'PATH': str(commands), 'CALLS': str(tmp_path / 'calls')}
+    for name in ('sh', 'mktemp', 'rm', 'cp', 'mkdir', 'chmod'):
+        (commands / name).symlink_to(shutil.which(name))
+
+    def script(name, body):
+        path = commands / name
+        path.write_text('#!/bin/sh\n' + body + '\n')
+        path.chmod(0o755)
+
+    script('uname', 'if [ "$1" = -m ]; then echo ${FAKE_MACHINE:-x86_64}; else echo ${FAKE_SYSTEM:-Linux}; fi')
+    script('id', 'echo 1000')
+    return env, script
+
+
+def run_installer(env):
+    return subprocess.run(['sh', str(ROOT / 'install.sh')], env=env, text=True, capture_output=True)
+
+
+def test_failed_bootstrap_download_does_not_execute_partial_script(shell_environment):
+    env, script = shell_environment
+    script('curl', 'exit 22')
+    result = run_installer(env)
+    assert result.returncode != 0
+    assert not (Path(env['HOME']) / '.local/bin/uv').exists()
+    assert 'PokeSim is installed' not in result.stdout
+
+
+def test_reuse_uv_and_fail_without_reporting_success(shell_environment):
+    env, script = shell_environment
+    script('uv', 'exit 7')
+    result = run_installer(env)
+    assert result.returncode == 7
+    assert 'Installing uv for' not in result.stdout
+    assert 'PokeSim is installed' not in result.stdout
+
+
+def test_bootstrap_without_uv_and_launch_from_path_with_spaces(shell_environment, tmp_path):
+    env, script = shell_environment
+    fake_bin = tmp_path / 'tool commands'
+    fake_bin.mkdir()
+    launcher = fake_bin / 'pokesim-desktop'
+    launcher.write_text('#!/bin/sh\n[ "$1" = --help ]\n')
+    launcher.chmod(0o755)
+    fake_uv = tmp_path / 'fake-uv'
+    fake_uv.write_text('''#!/bin/sh
+if [ "$1 $2" = "tool dir" ]
+then
+    printf '%s\\n' "$FAKE_BIN"
+else
+    printf '%s\\n' "$@" > "$CALLS"
+fi
+''')
+    fake_uv.chmod(0o755)
+    bootstrap = tmp_path / 'bootstrap'
+    bootstrap.write_text('''#!/bin/sh
+set -eu
+[ "$UV_NO_MODIFY_PATH" = 1 ]
+mkdir -p "$UV_INSTALL_DIR"
+cp "$FAKE_UV" "$UV_INSTALL_DIR/uv"
+chmod +x "$UV_INSTALL_DIR/uv"
+''')
+    script('curl', '''for argument in "$@"
+do
+    destination=$argument
+done
+cp "$BOOTSTRAP" "$destination"
+''')
+    env.update(FAKE_UV=str(fake_uv), FAKE_BIN=str(fake_bin), BOOTSTRAP=str(bootstrap))
+    result = run_installer(env)
+    assert result.returncode == 0, result.stderr
+    assert 'Installing uv for your user account' in result.stdout
+    assert f'"{launcher}"' in result.stdout
+    arguments = Path(env['CALLS']).read_text().splitlines()
+    assert arguments[:6] == ['tool', 'install', '--python', '3.12', '--managed-python', '--upgrade']
+    assert arguments[-1].startswith('https://github.com/afk-sapien/PokeSim/releases/download/')
+    # Retry finds the user-local uv even though its directory is absent from PATH.
+    result = run_installer(env)
+    assert result.returncode == 0, result.stderr
+    assert 'Installing uv for your user account' not in result.stdout
+
+
+def test_root_install_explains_normal_user_requirement(shell_environment):
+    env, script = shell_environment
+    script('id', 'echo 0')
+    result = run_installer(env)
+    assert result.returncode != 0
+    assert 'without sudo' in result.stderr
+
+
+def test_unsupported_platform_explains_windows_installer(shell_environment):
+    env, script = shell_environment
+    script('uname', 'echo MINGW64_NT')
+    result = run_installer(env)
+    assert result.returncode != 0
+    assert 'install.ps1' in result.stderr
+
+
+def test_quickstart_only_changes_storage_default():
+    docker = shutil.which('docker')
+    if docker is None:
+        pytest.skip('Compose configuration check needs Docker CLI, without a daemon')
+    if subprocess.run([docker, 'compose', 'version'], capture_output=True).returncode:
+        pytest.skip('Compose v2 is not installed on this host')
+    configs = []
+    env = {key: value for key, value in os.environ.items()
+           if key not in {'DATA_PATH', 'HTTP_PORT', 'PUBLIC_URL', 'POKESIM_IMAGE', 'BIND_ADDRESS'}}
+    env['HTTP_PORT'] = '18931'
+    for name in ('compose.yaml', 'compose.quickstart.yaml'):
+        result = subprocess.run([docker, 'compose', '--env-file', os.devnull, '-f', str(ROOT / name),
+                                 'config', '--format', 'json'], env=env, text=True, capture_output=True, check=True)
+        service = json.loads(result.stdout)['services']['pokesim']
+        mount = service.pop('volumes')[0]
+        assert mount['target'] == '/data'
+        assert mount['type'] == ('bind' if name == 'compose.yaml' else 'volume')
+        assert service['environment']['PUBLIC_URL'] == 'http://localhost:18931'
+        configs.append(service)
+    assert configs[0] == configs[1]
+
+
+def test_quickstart_test_ignores_inherited_compose_configuration(tmp_path, monkeypatch):
+    monkeypatch.setenv('COMPOSE_FILE', '/real/deployment/compose.yaml')
+    monkeypatch.setenv('COMPOSE_ENV_FILES', '/real/deployment/.env')
+    monkeypatch.setenv('COMPOSE_PROJECT_NAME', 'real-deployment')
+    monkeypatch.setenv('COMPOSE_PROFILES', 'production')
+    monkeypatch.setenv('DATA_PATH', '/real/data')
+    env = compose_environment('pokesim:test', 18932)
+    assert not any(key.startswith('COMPOSE_') for key in env)
+    assert 'DATA_PATH' not in env
+    command = compose_command(tmp_path, 'disposable-test')
+    assert command[command.index('-f') + 1] == str(tmp_path / 'compose.yaml')
+    assert command[command.index('--env-file') + 1] == str(tmp_path / '.env')
+    assert command[command.index('--project-name') + 1] == 'disposable-test'
+
+
+def test_public_quickstart_uses_completed_release_assets():
+    for name in ('README.md', 'docs/desktop.md', 'docs/self-hosting.md'):
+        text = (ROOT / name).read_text()
+        assert 'https://raw.githubusercontent.com/afk-sapien/PokeSim/main/' not in text
+        assert 'https://github.com/afk-sapien/PokeSim/releases/latest/download/' in text
+
+
+@pytest.mark.parametrize('system, machine', [('Linux', 'armv7l'), ('Linux', 'riscv64'), ('Darwin', 'ppc64'), ('FreeBSD', 'amd64')])
+def test_unsupported_platforms_stop_before_any_download(shell_environment, system, machine):
+    env, script = shell_environment
+    script('curl', 'echo downloaded >> "$CALLS"; exit 1')
+    script('uv', 'echo uv-ran >> "$CALLS"')
+    result = run_installer({**env, 'FAKE_SYSTEM': system, 'FAKE_MACHINE': machine})
+    assert result.returncode != 0
+    assert not Path(env['CALLS']).exists()
+    assert 'no emulator build for this platform' in result.stderr
+    assert 'pip install pokesim' in result.stderr and 'Do not' in result.stderr
+
+
+@pytest.mark.parametrize('system, machine', [('Linux', 'x86_64'), ('Linux', 'aarch64'), ('Darwin', 'x86_64'), ('Darwin', 'arm64')])
+def test_supported_platforms_pass_the_guard(shell_environment, system, machine):
+    env, script = shell_environment
+    script('uv', 'exit 7')
+    result = run_installer({**env, 'FAKE_SYSTEM': system, 'FAKE_MACHINE': machine})
+    assert result.returncode == 7
+    assert 'no emulator build' not in result.stderr
+
+
+@pytest.mark.parametrize('ldd, refused', [
+    ('musl libc (x86_64)\nVersion 1.2.5', True),
+    ('ldd (Ubuntu GLIBC 2.39-0ubuntu8) 2.39', False),
+])
+def test_musl_is_detected_from_the_c_library_in_use(shell_environment, ldd, refused):
+    """Regression: a glibc machine with the musl package installed has a musl loader file but runs glibc."""
+    env, script = shell_environment
+    script('ldd', f"printf '%s\\n' '{ldd}' >&2; exit {int(refused)}")
+    script('uv', 'exit 7')
+    result = run_installer(env)
+    assert ('musl libc' in result.stderr) is refused
+    assert result.returncode == (1 if refused else 7)
+
+
+def test_installer_scripts_never_tell_users_to_pip_install_pokesim():
+    for name in ('install.sh', 'install.ps1'):
+        text = (ROOT / name).read_text()
+        for line in text.splitlines():
+            if 'pip install pokesim' in line:
+                assert 'Do not' in line, (name, line)
+    assert 'OSArchitecture' in (ROOT / 'install.ps1').read_text()
+
+
+def test_pyproject_markers_cover_exactly_the_platforms_with_a_wheel():
+    from packaging.markers import Marker
+    from packaging.requirements import Requirement
+    requirements = [Requirement(line) for line in tomllib.loads((ROOT / 'pyproject.toml').read_text())['project']['dependencies']]
+    core = next(item for item in requirements if item.name == 'pokesim-core')
+    wheels = [item for item in requirements if item.name == 'pyboy-rs']
+    assert core.marker is not None, 'Without a marker pip would look up pyboy-rs on PyPI on unsupported platforms'
+    supported = [('linux', 'x86_64'), ('linux', 'aarch64'), ('darwin', 'x86_64'), ('darwin', 'arm64'),
+                 ('win32', 'AMD64'), ('win32', 'x86_64')]
+    unsupported = [('win32', 'ARM64'), ('linux', 'armv7l'), ('linux', 'riscv64'), ('freebsd14', 'amd64'), ('darwin', 'ppc64')]
+    for system, machine in supported + unsupported:
+        env = {'sys_platform': system, 'platform_machine': machine}
+        chosen = [item for item in wheels if item.marker.evaluate(env)]
+        if (system, machine) in supported:
+            assert core.marker.evaluate(env) and len(chosen) == 1, (system, machine)
+        else:
+            assert not core.marker.evaluate(env) and not chosen, (system, machine)
+
+
+def test_unsupported_platform_message_is_shown_instead_of_a_traceback(monkeypatch):
+    import importlib.util
+    from pokesim import platform_support
+    real = importlib.util.find_spec
+
+    def missing(name, *args, **kwargs):
+        return None if name == 'pyboy_rs' else real(name, *args, **kwargs)
+
+    monkeypatch.setattr(importlib.util, 'find_spec', missing)
+    with pytest.raises(SystemExit) as stopped:
+        platform_support.require_emulator()
+    assert 'no emulator build' in str(stopped.value) and 'pip install pokesim' in str(stopped.value)

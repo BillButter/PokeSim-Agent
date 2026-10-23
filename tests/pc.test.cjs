@@ -1,0 +1,495 @@
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const test = require('node:test')
+const vm = require('node:vm')
+const source = fs.readFileSync('pokesim/web/static/types.js', 'utf8') + '\n{}\n' + fs.readFileSync('pokesim/web/static/routes.js', 'utf8') + '\n{}\n' + fs.readFileSync('pokesim/web/static/mon-grid.js', 'utf8') + '\n{}\n' + fs.readFileSync('pokesim/web/static/pc.js', 'utf8')
+
+function pc(pokemon, search = '?scope=all', party = [], base = '', refuse = '') {
+  const elements = new Map()
+  const element = selector => {
+    if (!elements.has(selector)) elements.set(selector, {
+      value: '', innerHTML: '', textContent: '', options: [{}, {}],
+      classList: {add() {}, remove() {}, toggle() {}}, setAttribute() {}, removeAttribute() {}, showModal() { this.open = true }, focus() {},
+      insertAdjacentHTML(_, html) { this.innerHTML += html },
+    })
+    return elements.get(selector)
+  }
+  let url
+  const calls = []
+  // `server.offline` fails later status reads; `server.gate` holds them, answering with the state when asked.
+  const server = {offline: false, gate: null}
+  const context = vm.createContext({
+    document: {querySelector: selector => selector.startsWith('meta[') ? {content: selector.includes('pokesim-base') ? base : ''} : element(selector), activeElement: null, hidden: false, addEventListener() {}},
+    location: {search}, URLSearchParams,
+    history: {replaceState: (_, __, next) => { url = next }},
+    fetch: async (path, options) => { calls.push({path, options})
+      if (options?.method === 'POST') return refuse ? {ok: false, json: async () => ({detail: refuse})} : {ok: true, json: async () => ({ok: true})}
+      if (server.offline) throw new Error('offline')
+      const body = JSON.parse(JSON.stringify({started: true, version: 'blue', party,
+        storage: {active_box: 1, box_counts: Array(12).fill(20), pokemon}}))
+      if (server.gate) await server.gate
+      return {ok: true, json: async () => body} },
+    setInterval() {}, setTimeout, requestAnimationFrame: callback => setTimeout(callback, 0),
+  })
+  vm.runInContext(source, context)
+  return {
+    async ready() { await new Promise(resolve => setImmediate(resolve)) },
+    // Cards past the first screen are drawn over the next frames.
+    settle: () => new Promise(resolve => setTimeout(resolve, 20)),
+    rows: () => JSON.parse(vm.runInContext('JSON.stringify(residents)', context)),
+    element, url: () => url, calls, server,
+    sort(key, order) {
+      element('#pc-sort').value = key
+      element('#pc-sort').onchange()
+      if (order) { element('#pc-order').value = order
+        element('#pc-order').onchange() }
+    },
+    refresh: () => vm.runInContext('refresh()', context),
+  }
+}
+
+const mon = (box, position, level, extra = {}) => ({box, position, level, dex: 25,
+  nick: 'Partner', name: 'Pikachu', experience: level ** 3,
+  dvs: [1, 2, 3, 4, 5], stat_exp: [0, 0, 0, 0, 0], ...extra})
+
+test('all-box level sorting includes every partner and leaves storage order intact', async () => {
+  const pokemon = Array.from({length: 25}, (_, i) => mon(Math.floor(i / 20) + 1, i % 20 + 1, i + 1))
+  const before = JSON.stringify(pokemon)
+  const view = pc(pokemon)
+  await view.ready()
+  view.sort('level')
+  assert.deepEqual(view.rows().map(p => p.level), Array.from({length: 25}, (_, i) => 25 - i))
+  view.sort('level', 'asc')
+  assert.equal(view.rows()[0].level, 1)
+  assert.equal(JSON.stringify(pokemon), before)
+})
+
+test('totals include all five stats and missing values sort last in both directions', async () => {
+  const view = pc([
+    mon(1, 1, 20, {dvs: [], stat_exp: []}),
+    mon(2, 1, 20, {dvs: [0, 0, 0, 0, 0]}),
+    mon(3, 1, 20, {dvs: [15, 15, 15, 15, 15], stat_exp: [65535, 65535, 65535, 65535, 65535]}),
+  ])
+  await view.ready()
+  for (const field of ['dvs', 'stat_exp']) {
+    view.sort(field)
+    assert.deepEqual(view.rows().map(p => p.box), [3, 2, 1])
+    view.sort(field, 'asc')
+    assert.deepEqual(view.rows().map(p => p.box), [2, 3, 1])
+  }
+  assert.match(view.element('#pc-grid').innerHTML, /327,675/)
+  assert.match(view.element('#pc-grid').innerHTML, /Unavailable/)
+})
+
+test('bookmarked sorting survives refresh and composes with search and box selection', async () => {
+  const view = pc([mon(2, 1, 50, {nick: 'Berry'}), mon(1, 1, 90, {nick: 'Apple'}),
+    mon(2, 2, 80, {nick: 'Apple'})], '?scope=all&sort=nick&order=asc')
+  await view.ready()
+  assert.deepEqual(view.rows().map(p => p.level), [90, 80, 50])
+  assert.equal(new URLSearchParams(view.url().split('?')[1]).get('sort'), 'nick')
+  view.element('#pc-search').value = 'apple'
+  view.element('#pc-search').oninput()
+  assert.deepEqual(view.rows().map(p => p.level), [90, 80])
+  view.element('#mobile-box').onchange({target: {value: '2'}})
+  assert.deepEqual(view.rows().map(p => p.level), [80])
+  await view.refresh()
+  assert.deepEqual(view.rows().map(p => p.level), [80])
+  assert.match(view.url(), /sort=nick&order=asc/)
+})
+
+test('all Pokemon power sorting ranks every box independently of box filters', async () => {
+  const pokemon = Array.from({length: 25}, (_, i) => mon(Math.floor(i / 20) + 1, i % 20 + 1, 100 - i,
+    {power: 100 + i, calculated_stats: {HP: 10, Attack: 20, Defense: 30, Speed: 40, Special: i}}))
+  pokemon.push(mon(3, 1, 100, {power: null}))
+  const view = pc(pokemon, '?box=1&q=missing&sort=level')
+  await view.ready()
+  assert.equal(view.rows().length, 0)
+  view.element('#pc-all-view').onclick()
+  view.sort('power')
+  assert.equal(view.element('#pc-scope').value, 'all')
+  assert.equal(view.element('#pc-search').value, '')
+  assert.deepEqual(view.rows().map(p => p.power), [...Array.from({length: 25}, (_, i) => 124 - i), null])
+  view.sort('power', 'asc')
+  assert.equal(view.rows()[0].power, 100)
+  assert.equal(view.rows().at(-1).power, null)
+  view.sort('Special')
+  assert.equal(view.rows()[0].calculated_stats.Special, 24)
+  assert.equal(pokemon[0].power, 100)
+})
+
+test('power bookmarks survive refresh and details show the five stat breakdown', async () => {
+  const view = pc([mon(2, 1, 50, {power: 144, stat_total: 415,
+    calculated_stats: {HP: 110, Attack: 75, Defense: 50, Speed: 110, Special: 70}}),
+  mon(1, 1, 100, {power: null})], '?scope=all&sort=power&order=desc')
+  await view.ready()
+  await view.refresh()
+  assert.equal(view.rows()[0].power, 144)
+  assert.match(view.url(), /scope=all&sort=power&order=desc/)
+  assert.match(view.element('#pc-grid').innerHTML, /Power <b>144/)
+  view.element('#pc-grid').onclick({target: {closest: () => ({dataset: {mon: '0'}})}})
+  const detail = view.element('#pc-detail-body').innerHTML
+  assert.match(detail, /Total<\/th><td>415/)
+  assert.match(detail, /Stat Power<\/dt><dd>144/)
+  assert.match(detail, /HP<\/th><td>110/)
+  assert.match(detail, /Attack<\/th><td>75/)
+  assert.match(detail, /Special<\/th><td>70/)
+  assert.match(view.element('#pc-trade-action').innerHTML, /pokemon-stats\.md/)
+  assert.doesNotMatch(detail, /Power =|Total DVs include|Missing historical records|DV stars measure/)
+})
+
+test('party joins every combined sort without changing source data', async () => {
+  const boxed = Array.from({length: 20}, (_, i) => mon(1, i + 1, 20 + i, {power: 200 + i}))
+  const party = [mon(undefined, undefined, 80, {slot: 1, nick: 'Ace', power: 900,
+    dvs: [15, 15, 15, 15, 15], stat_exp: [65535, 65535, 65535, 65535, 65535],
+    calculated_stats: {HP: 200, Attack: 200, Defense: 200, Speed: 200, Special: 100}})]
+  const before = JSON.stringify({boxed, party})
+  const view = pc(boxed, '?scope=all', party)
+  await view.ready()
+  for (const field of ['box', 'power', 'battle_power', 'level', 'dvs', 'stat_exp', 'experience', 'dex', 'name', 'nick', 'HP', 'Attack', 'Defense', 'Speed', 'Special']) {
+    view.sort(field)
+    assert.equal(view.rows()[0].nick, 'Ace', field)
+  }
+  assert.equal(view.element('#pc-count').textContent, '21 Pokémon')
+  assert.match(view.element('#pc-grid').innerHTML, /Party, slot 1/)
+  view.sort('level', 'asc')
+  assert.equal(view.rows().at(-1).nick, 'Ace')
+  view.element('#pc-strongest').onclick()
+  assert.equal(view.rows()[0].nick, 'Ace')
+  assert.equal(JSON.stringify({boxed, party}), before)
+})
+
+test('party selection bookmarks, details, refresh, and box selection remain distinct', async () => {
+  const party = [mon(undefined, undefined, 80, {slot: 1, nick: 'Ace', power: 900})]
+  const view = pc([mon(2, 1, 90)], '?box=party&sort=power&order=desc', party)
+  await view.ready()
+  assert.equal(view.rows().length, 1)
+  assert.equal(view.rows()[0].box, 0)
+  assert.equal(view.element('#pc-heading').textContent, 'Party')
+  assert.match(view.url(), /box=party/)
+  assert.match(view.element('#box-picker').innerHTML, /data-box="0" aria-pressed="true"/)
+  view.element('#pc-grid').onclick({target: {closest: () => ({dataset: {mon: '0'}})}})
+  assert.match(view.element('#pc-detail-body').innerHTML, /Party, slot 1/)
+  party[0].level = 81
+  await view.refresh()
+  assert.match(view.element('#pc-grid').innerHTML, /Lv. 81/)
+  view.element('#mobile-box').onchange({target: {value: '2'}})
+  assert.deepEqual(view.rows().map(p => p.box), [2])
+  view.element('#box-picker').onclick({target: {closest: () => ({dataset: {box: '0'}})}})
+  assert.deepEqual(view.rows().map(p => p.box), [0])
+  view.element('#pc-search').value = 'missing'
+  view.element('#pc-search').oninput()
+  assert.equal(view.rows().length, 0)
+})
+
+test('box and list modes have separate controls and preserve physical slots', async () => {
+  const view = pc([mon(1, 2, 99), mon(1, 1, 10)], '?box=1&sort=level&order=desc')
+  await view.ready()
+  assert.deepEqual(view.rows().map(mon => mon.position), [1, 2])
+  assert.equal(view.element('#pc-sidebar').hidden, false)
+  assert.equal(view.element('#pc-sort-control').hidden, true)
+  assert.match(view.element('#pc-grid').innerHTML, /pc-empty-slot/)
+  view.element('#pc-all-view').onclick()
+  assert.deepEqual(view.rows().map(mon => mon.level), [99, 10])
+  assert.equal(view.element('#pc-sidebar').hidden, true)
+  assert.equal(view.element('#pc-sort-control').hidden, false)
+  assert.match(view.element('#pc-grid').innerHTML, /class="pc-mon/)
+  assert.doesNotMatch(view.element('#pc-grid').innerHTML, /pc-list-row/)
+  assert.doesNotMatch(view.element('#pc-grid').innerHTML, /pc-empty-slot/)
+  view.element('#pc-search').value = 'missing'
+  view.element('#pc-search').oninput()
+  view.element('#pc-boxes-view').onclick()
+  assert.equal(view.element('#pc-search').value, '')
+  assert.equal(view.rows().length, 2)
+  view.element('#pc-all-view').onclick()
+  assert.equal(view.element('#pc-search').value, 'missing')
+})
+
+test('perfect partners carry an accessible badge in box and all-partner views', async () => {
+  const view = pc([mon(1, 1, 20, {perfect_dvs:true, dv_stars:4, dv_total:75, dv_percent:100}), mon(1, 2, 21)], '?box=1')
+  await view.ready()
+  assert.match(view.element('#pc-grid').innerHTML, /pc-mon perfect-entry/)
+  assert.match(view.element('#pc-grid').innerHTML, /perfect DVs, preserved for the collection/)
+  assert.match(view.element('#pc-grid').innerHTML, /Perfect DV/)
+  view.element('#pc-all-view').onclick()
+  assert.match(view.element('#pc-grid').innerHTML, /pc-mon perfect-entry/)
+})
+
+
+test('all 246 partners remain searchable, sortable, and openable on one page', async () => {
+  const boxed = Array.from({length:240}, (_, i) => mon(Math.floor(i / 20) + 1, i % 20 + 1,
+    i % 100 + 1, {nick:'Boxed ' + i}))
+  const party = Array.from({length:6}, (_, i) => mon(undefined, undefined, 100,
+    {slot:i + 1, nick:'Party ' + i}))
+  const view = pc(boxed, '?scope=all', party)
+  await view.ready()
+  assert.equal(view.rows().length, 246)
+  // The first screen of cards paints at once and the rest follow on later frames.
+  const painted = (view.element('#pc-grid').innerHTML.match(/data-mon=/g) || []).length
+  assert.ok(painted >= 40 && painted < 246, `painted ${painted}`)
+  await view.settle()
+  assert.equal((view.element('#pc-grid').innerHTML.match(/data-mon=/g) || []).length, 246)
+  assert.doesNotMatch(source, /pc-pagination|pc-next|pc-prev/)
+  view.sort('level')
+  assert.equal(view.rows().length, 246)
+  const last = view.rows()[245]
+  view.element('#pc-grid').onclick({target:{closest:() => ({dataset:{mon:'245'}})}})
+  assert.match(view.element('#pc-detail-body').innerHTML, new RegExp(last.nick))
+  view.element('#pc-search').value = 'Boxed 239'
+  view.element('#pc-search').oninput()
+  assert.equal(view.rows().length, 1)
+  view.element('#pc-search').value = ''
+  view.element('#pc-search').oninput()
+  await view.refresh()
+  assert.equal(view.rows().length, 246)
+})
+
+test('DV ratings filter, sort, bookmark, and explain partners in every view', async () => {
+  const view = pc([
+    mon(1, 1, 99, {dv_stars: 1, dv_total: 15, dv_percent: 20}),
+    mon(1, 2, 20, {dv_stars: 3, dv_total: 60, dv_percent: 80}),
+    mon(1, 3, 21, {dv_stars: 3, dv_total: 70, dv_percent: 93.3}),
+    mon(1, 4, 5, {dv_stars: 4, dv_total: 75, dv_percent: 100, perfect_dvs: true}),
+    mon(1, 5, 100, {dvs: [], dv_stars: null}),
+  ], '?scope=all&rating=3plus&sort=dv_stars')
+  await view.ready()
+  assert.deepEqual(view.rows().map(p => p.position), [4, 3, 2])
+  assert.match(view.url(), /rating=3plus/)
+  assert.match(view.element('#pc-grid').innerHTML, /3-star DVs/)
+  assert.match(view.element('#pc-grid').innerHTML, /★★★★/)
+  view.element('#pc-grid').onclick({target: {closest: () => ({dataset: {mon: '1'}})}})
+  assert.match(view.element('#pc-detail-body').innerHTML, /70 \/ 75 DVs, 93.3%/)
+  assert.match(view.element('#pc-trade-action').innerHTML, /Stats guide/)
+  view.element('#pc-rating').value = '3'
+  view.element('#pc-rating').oninput()
+  await view.refresh()
+  assert.deepEqual(view.rows().map(p => p.position), [3, 2])
+  view.element('#pc-boxes-view').onclick()
+  assert.deepEqual(view.rows().map(p => p.position), [2, 3])
+  view.element('#pc-rating').value = 'unknown'
+  view.element('#pc-rating').oninput()
+  assert.deepEqual(view.rows().map(p => p.position), [5])
+  assert.match(view.element('#pc-grid').innerHTML, /DVs unknown/)
+  view.element('#pc-rating').value = 'all'
+  view.element('#pc-rating').oninput()
+  view.element('#pc-all-view').onclick()
+  view.sort('dv_stars', 'asc')
+  assert.deepEqual(view.rows().map(p => p.position), [1, 2, 3, 4, 5])
+})
+
+test('PC filters preserve the selected adventure address', async () => {
+  const view = pc([mon(1, 1, 20)], '?scope=all', [], '/games/second-red')
+  await view.ready()
+  view.sort('level')
+  assert.match(view.url(), /^\/games\/second-red\/pc\?/)
+})
+
+
+
+test('All Pokemon defaults to battle_power descending on entry and direct links', async () => {
+  const pokemon = [mon(1, 1, 100, {battle_power: 2614, stat_total: 1533}),
+    mon(2, 1, 100, {battle_power: 4575, stat_total: 1725}),
+    mon(3, 1, 100, {battle_power: 3291, stat_total: 1499}), mon(4, 1, 100, {battle_power: null})]
+  for (const search of ['', '?scope=all', '?scope=all&sort=invalid']) {
+    const view = pc(pokemon, search)
+    await view.ready()
+    if (!search.includes('scope=all')) view.element('#pc-all-view').onclick()
+    assert.equal(view.element('#pc-sort').value, 'battle_power')
+    assert.equal(view.element('#pc-order').value, 'desc')
+    assert.deepEqual(view.rows().map(row => row.battle_power), [4575, 3291, 2614, null])
+    await view.refresh()
+    assert.deepEqual(view.rows().map(row => row.battle_power), [4575, 3291, 2614, null])
+    view.sort('stat_total')
+    assert.deepEqual(view.rows().map(row => row.stat_total), [1725, 1533, 1499, undefined])
+  }
+})
+
+test('DV probability labels stay compact and retain very rare nonzero tails', async () => {
+  const view = pc([mon(1, 1, 5, {power: 20, potential_power: 3200,
+    dv_top_percent: 100 / 65536, dv_better_percent: 0})])
+  await view.ready()
+  view.element('#pc-grid').onclick({target: {closest: () => ({dataset: {mon: '0'}})}})
+  const detail = view.element('#pc-detail-body').innerHTML
+  assert.match(detail, /Stat Power<\/dt><dd>20 <span class="unit">\/ 3,200<\/span>/)
+  assert.match(detail, /DVs top 0\.00153%/)
+  assert.doesNotMatch(detail, /Potential Stat Power|Higher roll/)
+  assert.doesNotMatch(detail, /65,536|uniform|independent fifth/)
+})
+
+test('eggs show as Eggs without their species, types or sprite', async () => {
+  const view = pc([mon(1, 1, 5, {egg: true, name: 'Sneasel', nick: 'EGG', type_names: ['Dark', 'Ice'], dex: 215}),
+    mon(1, 2, 5, {egg: true, name: 'Egg', nick: 'EGG', type_names: [], dex: null})], '?box=1')
+  await view.ready()
+  const html = view.element('#pc-grid').innerHTML
+  assert.match(html, /class="egg-plate" role="img" aria-label="Egg"/)
+  assert.match(html, /Egg, Lv\. 5/)
+  assert.doesNotMatch(html, /Sneasel|sprites\/|Dark/)
+})
+
+test('details list moves and condition without the old record for Gen I partners', async () => {
+  const party = [mon(undefined, undefined, 15, {slot: 1, hp: 4, max_hp: 30, status_label: 'Poisoned', trainer_id: 42,
+    experience: 2300, experience_progress: {total: 2300, remaining: 235, percent: 53, max_level: false},
+    elite_four_wins: 2, elite_four_wins_incomplete: false,
+    move_details: [{name: 'Vine Whip', type: 'Grass', pp: 0, max_pp: 10, power: 35, accuracy: 100},
+      {name: 'Growl', type: 'Normal', pp: 40, max_pp: 40, power: 0, accuracy: 100},
+      {name: 'Tackle', type: 'Normal', power: 35, accuracy: 95}]})]
+  const view = pc([], '?box=party', party)
+  await view.ready()
+  view.element('#pc-grid').onclick({target: {closest: () => ({dataset: {mon: '0'}})}})
+  const detail = view.element('#pc-detail-body').innerHTML
+  assert.match(detail, /PP<\/span> <span class="pc-move-pp empty"><b>0<\/b>\/10<\/span>/)
+  assert.match(detail, /Vine Whip<\/span><span class="pc-move-type"><span class="tag type-badge type-grass">Grass<\/span><\/span><span class="pc-move-specs"><span class="pc-move-kind">Special<\/span>.*?pc-move-pow">35<\/b>.*?pc-move-acc">100%/)
+  assert.match(detail, /pc-move-kind">Status<\/span>.*?pc-move-pow">—<\/b>/)
+  assert.match(detail, /Tackle<\/span><span class="pc-move-type">.*?Physical/)
+  // A Pokémon knows up to four moves: one blank slot keeps the card's height, and no header row.
+  assert.equal((detail.match(/class="pc-move-blank"/g) || []).length, 1)
+  assert.doesNotMatch(detail, /pc-move-head/)
+  // Healthy is never stamped; a real condition is.
+  assert.doesNotMatch(detail, />Healthy</)
+  assert.equal((detail.match(/class="pc-move-pp(?: empty)?"><b>/g) || []).length, 2)
+  assert.match(detail, /pc-move-pp pc-move-none">—/)
+  assert.match(detail, /aria-label="Health: 4 of 30"/)
+  assert.match(detail, /data-level="crit"/)
+  assert.match(detail, /tag--warn">Poisoned/)
+  assert.match(detail, /title="235 to Lv\. 16">53%/)
+  assert.doesNotMatch(detail, /Original trainer|Elite Four|Friendship|Hidden Power|Pokérus|Caught|Experience<\/dt>/)
+})
+
+test('Gen II details resolve Hidden Power and tag Pokérus', async () => {
+  const party = [mon(undefined, undefined, 50, {slot: 1, hp: 151, max_hp: 151, friendship: 255, trainer_id: 7,
+    experience: {total: 125000, remaining: 0, percent: 100, max_level: true}, pokerus: 'infected',
+    hidden_power: {type: 'Fire', power: 70}, caught: {level: 3, location: 'Route 29', time: 'Morning'},
+    elite_four_wins: null, move_details: [{name: 'Hidden Power', type: 'Normal', pp: 15, max_pp: 15, power: 1, accuracy: 100}]})]
+  const view = pc([], '?box=party', party)
+  await view.ready()
+  view.element('#pc-grid').onclick({target: {closest: () => ({dataset: {mon: '0'}})}})
+  const detail = view.element('#pc-detail-body').innerHTML
+  assert.match(detail, /type-fire">Fire<\/span><\/span><span class="pc-move-specs"><span class="pc-move-kind">Special<\/span>.*?pc-move-pow">70</)
+  assert.match(detail, /tag--warn">Pokérus</)
+  assert.doesNotMatch(detail, /Friendship|Caught|Route 29|Elite Four|Hidden Power<\/dt>/)
+  assert.match(detail, /Max level/)
+  assert.match(detail, />MAX</)
+})
+
+test('egg details show only hatching progress', async () => {
+  const view = pc([mon(1, 1, 5, {egg: true, name: 'Sneasel', nick: 'EGG', dex: 215, egg_cycles: 1, friendship: 1,
+    trainer_id: 9, hp: 20, max_hp: 20, type_names: ['Dark', 'Ice'], hidden_power: {type: 'Fire', power: 70},
+    move_details: [{name: 'Scratch', type: 'Normal', pp: 35, max_pp: 35, power: 40, accuracy: 100}]})], '?box=1')
+  await view.ready()
+  view.element('#pc-grid').onclick({target: {closest: () => ({dataset: {mon: '0'}})}})
+  const detail = view.element('#pc-detail-body').innerHTML
+  assert.match(detail, /1 egg cycle<small>About 256 steps/)
+  assert.match(detail, /Not yet hatched/)
+  assert.doesNotMatch(detail, /Sneasel|Scratch|Friendship|Hidden Power|individual-stats|role="meter"|Dark/)
+})
+
+test('the popup has one lock toggle that reflects the saved setting', async () => {
+  for (const [setting, pressed] of [['keep', 'true'], ['auto', 'false'], ['first', 'false']]) {
+    const view = pc([], '?box=party', [mon(undefined, undefined, 20, {slot: 1, trade_key: 'k', trade_setting: setting})])
+    await view.ready()
+    assert.equal(/class="pc-lock"/.test(view.element('#pc-grid').innerHTML), setting === 'keep')
+    view.element('#pc-grid').onclick({target: {closest: () => ({dataset: {mon: '0'}})}})
+    const html = view.element('#pc-detail-body').innerHTML
+    assert.match(html, new RegExp(`<button type="button" class="lock-toggle" data-lock-key="k" data-locked="${pressed}"`))
+    assert.match(html, pressed === 'true' ? /<span>Locked<\/span>/ : /<span>Tradeable<\/span>/)
+    assert.doesNotMatch(html, /lock-note|Tap to lock/)
+    assert.doesNotMatch(html, /Prefer to trade|<select/)
+  }
+})
+
+test('shiny Pokémon are protected and eggs have no lock', async () => {
+  const view = pc([], '?box=party', [mon(undefined, undefined, 20, {slot: 1, trade_key: 'k', shiny: true}), mon(undefined, undefined, 1, {slot: 2, trade_key: 'e', egg: true})])
+  await view.ready()
+  view.element('#pc-grid').onclick({target: {closest: () => ({dataset: {mon: '0'}})}})
+  assert.match(view.element('#pc-detail-body').innerHTML, /Protected/)
+  assert.doesNotMatch(view.element('#pc-detail-body').innerHTML, /lock-toggle/)
+})
+
+test('the lock saves through the trade setting and a refused change goes back', async () => {
+  const toggle = {dataset: {lockKey: 'k'}, disabled: false}
+  const click = view => view.element('#pc-detail-body').onclick({target: {closest: () => toggle}})
+  const view = pc([], '?box=party', [mon(undefined, undefined, 20, {slot: 1, trade_key: 'k', trade_setting: 'auto'})])
+  await view.ready()
+  view.element('#pc-grid').onclick({target: {closest: () => ({dataset: {mon: '0'}})}})
+  await click(view)
+  const posts = view.calls.filter(call => call.options?.method === 'POST')
+  assert.equal(posts.length, 1)
+  assert.match(posts[0].path, /\/api\/trading\/preferences$/)
+  assert.deepEqual(JSON.parse(posts[0].options.body), {key: 'k', state: 'keep'})
+  const refused = pc([], '?box=party', [mon(undefined, undefined, 20, {slot: 1, trade_key: 'k', trade_setting: 'keep'})], '', 'An exchange is in progress.')
+  await refused.ready()
+  refused.element('#pc-grid').onclick({target: {closest: () => ({dataset: {mon: '0'}})}})
+  await click(refused)
+  assert.deepEqual(JSON.parse(refused.calls.find(call => call.options?.method === 'POST').options.body), {key: 'k', state: 'auto'})
+  assert.match(refused.element('#pc-detail-body').innerHTML, /data-locked="true"/)
+  assert.match(refused.element('#pc-detail-body').innerHTML, /An exchange is in progress\./)
+})
+
+test('a refused unlock goes back to a lock shown only by trade_locked', async () => {
+  const toggle = {dataset: {lockKey: 'k'}, disabled: false}
+  const view = pc([], '?box=party', [mon(undefined, undefined, 20, {slot: 1, trade_key: 'k', trade_locked: true})], '', 'An exchange is in progress.')
+  await view.ready()
+  view.server.offline = true    // The refresh after the refusal cannot repaint the lock.
+  view.element('#pc-grid').onclick({target: {closest: () => ({dataset: {mon: '0'}})}})
+  assert.match(view.element('#pc-detail-body').innerHTML, /data-locked="true"/)
+  await view.element('#pc-detail-body').onclick({target: {closest: () => toggle}})
+  assert.deepEqual(JSON.parse(view.calls.find(call => call.options?.method === 'POST').options.body), {key: 'k', state: 'auto'})
+  assert.match(view.element('#pc-detail-body').innerHTML, /data-locked="true"/)
+  assert.match(view.element('#pc-detail-body').innerHTML, /An exchange is in progress\./)
+})
+
+test('a refresh asked for while one is in flight runs again after it', async () => {
+  const party = [mon(undefined, undefined, 20, {slot: 1, trade_key: 'k', trade_setting: 'auto'})]
+  const view = pc([], '?box=party', party)
+  await view.ready()
+  let release
+  view.server.gate = new Promise(resolve => { release = resolve })
+  const stale = view.refresh()    // Carries the unlocked state.
+  await new Promise(resolve => setImmediate(resolve))
+  party[0].trade_setting = 'keep'
+  view.refresh()    // Arrives while the stale fetch is still out.
+  view.server.gate = null
+  release()
+  await stale
+  await view.settle()
+  assert.match(view.element('#pc-grid').innerHTML, /class="pc-lock"/)
+})
+
+test('a view link shows the lock but cannot change it', async () => {
+  const view = pc([], '?box=party', [mon(undefined, undefined, 20, {slot: 1, trade_key: 'k', trade_setting: 'keep'})], '/view/abc')
+  await view.ready()
+  view.element('#pc-grid').onclick({target: {closest: () => ({dataset: {mon: '0'}})}})
+  assert.match(view.element('#pc-detail-body').innerHTML, /data-locked="true" disabled/)
+  assert.match(view.element('#pc-detail-body').innerHTML, /Only the owner can lock Pokémon/)
+})
+
+test('a slot in the address opens that Pokémon once the fresh PC has loaded', async () => {
+  const view = pc([mon(3, 2, 10, {nick: 'FIRST'}), mon(3, 7, 30, {nick: 'WANTED'})], '?box=3&slot=7')
+  await view.ready()
+  assert.match(view.element('#pc-detail-body').innerHTML, /<h2 id="pc-detail-name">WANTED<\/h2>/)
+  assert.match(view.element('#pc-detail-body').innerHTML, /Box 3, slot 7/)
+  // The address keeps the box but not the slot, so a reload does not reopen it.
+  assert.doesNotMatch(view.url(), /slot=/)
+  const party = pc([], '?box=party&slot=2', [mon(undefined, undefined, 20, {slot: 1, nick: 'LEAD'}), mon(undefined, undefined, 20, {slot: 2, nick: 'SECOND'})])
+  await party.ready()
+  assert.match(party.element('#pc-detail-body').innerHTML, /SECOND/)
+  const missing = pc([mon(3, 2, 10)], '?box=3&slot=9')
+  await missing.ready()
+  assert.equal(missing.element('#pc-detail-body').innerHTML, '')
+})
+
+test('boxes lay out in rows that divide 20 and the party in rows that divide 6', async () => {
+  const layout = async search => {
+    const view = pc([mon(1, 1, 10)], search, [mon(0, 1, 5)])
+    const classes = new Set()
+    view.element('#pc-grid').classList = {add() {}, remove() {}, toggle(name, on) { if (on) classes.add(name); else classes.delete(name) }}
+    await view.ready()
+    return {view, classes}
+  }
+  const box = await layout('?box=1')
+  assert.deepEqual([...box.classes], ['pc-box-grid'])
+  box.view.element('#pc-all-view').onclick()
+  assert.deepEqual([...box.classes], ['pc-all-grid'])
+  assert.deepEqual([...(await layout('?box=party')).classes], ['pc-party-grid'])
+  const css = fs.readFileSync('pokesim/web/static/panel-pc.css', 'utf8')
+  for (const columns of css.matchAll(/\.pc-box-grid[^{]*\{ grid-template-columns: repeat\((\d+)/g)) assert.equal(20 % Number(columns[1]), 0)
+})

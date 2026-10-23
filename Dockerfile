@@ -1,69 +1,52 @@
-# syntax=docker/dockerfile:1.7
+FROM ghcr.io/astral-sh/uv:0.13.1 AS uv
+FROM python:3.14-slim-trixie AS build
+COPY --from=uv /uv /usr/local/bin/uv
+ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=never
+WORKDIR /app
+COPY pyproject.toml setup.py uv.lock README.md LICENSE THIRD_PARTY_NOTICES.md ./
+COPY pokesim ./pokesim
+COPY tools/bundle_dependency_sources.py ./tools/bundle_dependency_sources.py
+# The corresponding pyboy-rs source archive is a release asset next to its wheels. The checksum is
+# required: an empty value fails the build instead of skipping verification.
+ARG EMULATOR_SOURCE_URL=https://github.com/afk-sapien/pyboy-rs/releases/download/v0.1.2/pyboy_rs-0.1.2.tar.gz
+ARG EMULATOR_SOURCE_SHA256=f1b346fb4de172181ee4ce83862a7a176d8a32924bde65542312eb190f92915b
+ADD --checksum=sha256:${EMULATOR_SOURCE_SHA256} ${EMULATOR_SOURCE_URL} /emulator-source/pyboy-rs-source.tar.gz
+# The locked dependencies are release wheels, so this stage needs no compiler or Rust toolchain.
+# The acceleration extra compiles route searches with numba. Its lock markers only select it where
+# wheels exist (amd64 and arm64 Linux here), and navigation falls back to Python without it.
+RUN uv sync --frozen --no-dev --no-editable --extra acceleration \
+    && .venv/bin/python tools/bundle_dependency_sources.py /notices --emulator-source /emulator-source/pyboy-rs-source.tar.gz
 
-# ---- build stage: compile/install Python dependencies (including PyBoy) ----
-FROM python:3.12-slim AS builder
-
-ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    PIP_NO_CACHE_DIR=1
-
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
-        build-essential \
-        libsdl2-dev \
-        libsdl2-image-dev \
-        libsdl2-mixer-dev \
-        libsdl2-ttf-dev \
-    && rm -rf /var/lib/apt/lists/*
-
-WORKDIR /build
-COPY pyproject.toml README.md ./
-COPY app ./app
-RUN python -m venv /opt/venv \
-    && /opt/venv/bin/pip install --upgrade pip setuptools wheel \
-    && /opt/venv/bin/pip install ".[emulator]"
-
-# ---- runtime stage ----
-FROM python:3.12-slim AS runtime
-
-ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1 \
-    PATH="/opt/venv/bin:$PATH" \
-    POKESIM_HOST=0.0.0.0 \
-    POKESIM_PORT=8000 \
-    POKESIM_ROMS_DIR=/roms \
-    POKESIM_DATA_DIR=/data \
-    SDL_VIDEODRIVER=dummy \
-    SDL_AUDIODRIVER=dummy
-
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
-        libsdl2-2.0-0 \
-        libsdl2-image-2.0-0 \
-        libsdl2-mixer-2.0-0 \
-        libsdl2-ttf-2.0-0 \
-        libgl1 \
-        libglib2.0-0 \
-        libsm6 \
-        libxext6 \
-        libxrender1 \
+FROM python:3.14-slim-trixie
+ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 \
+    DATA_DIR=/data ROM_DIR=/roms \
+    PORT=8000 HOST=0.0.0.0 \
+    SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy PATH=/app/.venv/bin:$PATH \
+    NUMBA_CACHE_DIR=/tmp/numba-cache \
+    AI_MODE=default AI_BASE_URL= AI_API_KEY= AI_MODEL= AI_MAX_FRAMES=120
+RUN apt-get update && apt-get upgrade -y \
+    && apt-get install -y --no-install-recommends git ca-certificates \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --gid 1000 pokesim \
-    && useradd --uid 1000 --gid pokesim --create-home --shell /usr/sbin/nologin pokesim \
-    && mkdir -p /roms /data \
-    && chown -R pokesim:pokesim /roms /data
-
+    && useradd --uid 1000 --gid pokesim --no-create-home pokesim \
+    && mkdir /data /roms && chown pokesim:pokesim /data /roms
+RUN python -m pip uninstall --yes pip \
+    && rm -rf /usr/local/lib/python3.14/ensurepip
 WORKDIR /app
-
-COPY --from=builder /opt/venv /opt/venv
-COPY app ./app
-COPY pyproject.toml README.md LICENSE THIRD_PARTY_NOTICES.md ./
-
-USER pokesim
-
+COPY --from=build /app/.venv /app/.venv
+COPY --from=build /notices /usr/share/pokesim
+COPY --from=build /app/pokesim /usr/share/pokesim/source/pokesim
+COPY pyproject.toml setup.py uv.lock LICENSE THIRD_PARTY_NOTICES.md /usr/share/pokesim/source/
+COPY licenses /usr/share/pokesim/licenses
+ARG VERSION=0.5.3
+ARG REVISION=unknown
+ENV POKESIM_REVISION=$REVISION
+LABEL org.opencontainers.image.source="https://github.com/BillButter/PokeSim-Agent" \
+      org.opencontainers.image.title="pokesim-agent" \
+      org.opencontainers.image.version=$VERSION \
+      org.opencontainers.image.revision=$REVISION \
+      org.opencontainers.image.licenses="MIT AND LGPL-3.0-only"
+USER 1000:1000
 EXPOSE 8000
-VOLUME ["/roms", "/data"]
-
-HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3)"
-
-CMD ["python", "-m", "app"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s CMD ["python", "-m", "pokesim.healthcheck", "--manager"]
+CMD ["python", "-m", "pokesim", "serve", "--data-dir", "/data", "--host", "0.0.0.0", "--port", "8000"]

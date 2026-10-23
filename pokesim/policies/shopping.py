@@ -1,0 +1,203 @@
+"""Shop interaction state, independent of the strategic policy's PC and battle state."""
+from dataclasses import dataclass, replace
+
+from .battle import BALLS, HEALING, shopping_item
+from .progression import Goal
+from .collection import legendary_project
+from .menus import MenuDecision, tap
+from ..strategy_data import DATA, ITEMS, MAPS, PRICES, WORLD
+
+# Keep finite TMs unless a completely full bag has no ordinary surplus to sell.
+RENEWABLE_TMS = {200 + number for number in (1, 2, 5, 7, 9, 15, 17, 23, 32, 33, 37, 50)}
+
+# Red and Blue refuse Safari Zone entry below this amount, and the story needs two visits' worth of
+# prizes (Surf and the Gold Teeth), so an unaffordable fee is a permanent roadblock, not a delay.
+SAFARI_FEE = 500
+CASH_RESERVE = 300
+# Most units bought or sold in one request, so a long restock still checks the plan between trades.
+TRADE_LIMIT = 20
+# Balls kept in stock so a shiny or rare find is catchable on any route; none can be bought in battle.
+BALL_RESERVE = 10
+SAFARI_GOALS = ('surf', 'teeth')
+SAFARI_INTERIOR = {m for m, w in WORLD.items() if w['name'].startswith('SafariZone') and w['name'] != 'SafariZoneGate'}
+SPARE = {ITEMS[name] for name in ('NUGGET', 'X_ACCURACY', 'GUARD_SPEC', 'DIRE_HIT', 'X_ATTACK', 'X_DEFEND',
+                                  'X_SPEED', 'X_SPECIAL')}
+LUXURIES = {ITEMS[name] for name in ('HP_UP', 'PROTEIN', 'IRON', 'CARBOS', 'CALCIUM', 'PP_UP', 'RARE_CANDY')}
+
+
+def entry_fee(snapshot, goal_key):
+    """Cash the current objective needs at a gate before it can make any progress."""
+    return SAFARI_FEE if goal_key in SAFARI_GOALS and snapshot.map not in SAFARI_INTERIOR else 0
+
+
+def cash_reserve(snapshot):
+    """Keep the Safari fee untouched from the fourth badge until both Safari prizes are collected."""
+    counts = dict(snapshot.items)
+    knows = {move for mon in snapshot.party for move in mon.moves}
+    surf = counts.get(ITEMS['HM03']) or 57 in knows
+    strength = counts.get(ITEMS['HM04']) or 70 in knows or counts.get(ITEMS['GOLD_TEETH'])
+    return CASH_RESERVE + (SAFARI_FEE if snapshot.badges & 8 and not (surf and strength) else 0)
+
+
+@dataclass
+class SupplyPlan:
+    goal: Goal
+    prepared: bool = False
+    abandon: str | None = None
+
+
+@dataclass
+class ShoppingController:
+    selling: bool = False
+    restocking: bool = False
+    fund_target: int = 0
+
+    def leave_menu(self):
+        self.selling = False
+
+    @staticmethod
+    def item_for(snapshot, stock, goal_key, project):
+        if goal_key == 'collect_stone' and project and snapshot.map == MAPS['CELADON_MART_4F']:
+            item = ITEMS[project['evolution']['requirement']]
+            return item if item in stock and not dict(snapshot.items).get(item) and snapshot.money >= 2500 and len(snapshot.items) < 20 else None
+        return shopping_item(snapshot.items, stock, snapshot.money,
+                             snapshot.map == MAPS['INDIGO_PLATEAU_LOBBY'], collecting=True,
+                             legendary=legendary_project(project), reserve=cash_reserve(snapshot))
+
+    @staticmethod
+    def fund_index(snapshot):
+        """Bag slot to sell for cash: spares first, then luxuries, then the priciest remaining supply."""
+        def rank(row):
+            item = row[1]
+            tier = 0 if item in SPARE or 201 <= item <= 250 else 1 if item in LUXURIES else 3 if item in BALLS else 2
+            return tier, -PRICES.get(item, 0)
+        rows = [(i, item) for i, (item, qty) in enumerate(snapshot.items)
+                if qty and PRICES.get(item, 0) > 0 and (not 201 <= item <= 250 or item in RENEWABLE_TMS)]
+        return min(rows, key=rank)[0] if rows else None
+
+    def raising_funds(self, snapshot):
+        return bool(self.fund_target) and snapshot.money < self.fund_target
+
+    def _sale_choice(self, snapshot):
+        if self.raising_funds(snapshot):
+            return self.fund_index(snapshot)
+        return self.sale_index(snapshot) if len(snapshot.items) > 15 else None
+
+    @staticmethod
+    def sale_index(snapshot):
+        surplus = next((i for i, (item, qty) in enumerate(snapshot.items)
+                     if qty and (item == ITEMS['NUGGET'] or item in RENEWABLE_TMS
+                                 or len(snapshot.items) >= 18 and item in {
+                                     ITEMS[name] for name in ('X_ACCURACY', 'GUARD_SPEC', 'DIRE_HIT',
+                                                             'X_ATTACK', 'X_DEFEND', 'X_SPEED', 'X_SPECIAL')})), None)
+        if surplus is not None or len(snapshot.items) < 20:
+            return surplus
+        # Free one slot for required story items. Minimize the cost of replacing
+        # the complete TM stack later, without selling key items or supplies.
+        from ..tm_shop import PRICES as replacement_prices
+        candidates = [(replacement_prices[item] * qty, i) for i, (item, qty) in enumerate(snapshot.items)
+                      if qty and item in replacement_prices]
+        return min(candidates)[1] if candidates else None
+
+    def plan(self, snapshot, goal, project, *, requested_goal, healing, in_league, has_pokedex, completed_champion=False):
+        fee = entry_fee(snapshot, goal.key)
+        self.fund_target = fee + CASH_RESERVE if fee and snapshot.money < fee else 0
+        if self.fund_target and not healing and not in_league and has_pokedex and self.fund_index(snapshot) is not None:
+            clerks = [(map_id, 2, clerk[1]) for map_id, world in WORLD.items() if world['name'] in DATA['marts']
+                      for clerk in world['objects'] if clerk[2] == 'SPRITE_CLERK' and clerk[0] == 0]
+            if clerks:
+                return SupplyPlan(Goal('restock', 'Raise the Safari Zone entry fee',
+                                       'Sell spare valuables at a shop because the Safari Zone turns away anyone short of the fee',
+                                       tuple(clerks), 'left', True))
+        ball_reserve = BALL_RESERVE
+        balls = sum(qty for item, qty in snapshot.items if item in BALLS)
+        medicine = sum(qty for item, qty in snapshot.items if item in HEALING)
+        bag_full = len(snapshot.items) >= 18 and self.sale_index(snapshot) is not None
+        if balls < ball_reserve or (medicine == 0 and (snapshot.map in (2, 56)
+                or WORLD.get(snapshot.map, {}).get('name', '').endswith('Gym'))) or bag_full:
+            self.restocking = True
+        elif balls >= ball_reserve and medicine and not bag_full:
+            self.restocking = False
+        if snapshot.map == MAPS['INDIGO_PLATEAU_LOBBY']:
+            counts = dict(snapshot.items)
+            self.restocking = (balls < ball_reserve or medicine < 10 or counts.get(ITEMS['REVIVE'], 0) < 5
+                               or counts.get(ITEMS['FULL_HEAL'], 0) < 3)
+        legendary = legendary_project(project)
+        if legendary and not dict(snapshot.items).get(ITEMS['MASTER_BALL']):
+            self.restocking = (not project.get('supplies_prepared')
+                               or dict(snapshot.items).get(ITEMS['ULTRA_BALL'], 0) < 5 or bag_full)
+        if not (self.restocking and not healing and not in_league and goal.key != 'party_box' and has_pokedex):
+            return SupplyPlan(goal)
+        targets = []
+        for map_id, world in WORLD.items():
+            if snapshot.map == MAPS['INDIGO_PLATEAU_LOBBY'] and map_id != snapshot.map:
+                continue
+            if map_id == MAPS['INDIGO_PLATEAU_LOBBY'] and map_id != snapshot.map and snapshot.badges != 255:
+                # Route 23 turns back anyone without every badge, so this shop cannot be a plan yet.
+                continue
+            stock = DATA['marts'].get(world['name'], [])
+            if map_id != snapshot.map and not legendary:
+                stock = [item for item in stock if item in BALLS or item in HEALING or item == ITEMS['REVIVE']]
+            if bag_full or self.item_for(snapshot, stock, requested_goal, project) is not None:
+                clerk = next((obj for obj in world['objects'] if obj[2] == 'SPRITE_CLERK'), None)
+                if clerk and clerk[0] == 0:
+                    targets.append((map_id, 2, clerk[1]))
+        if targets:
+            return SupplyPlan(Goal('restock', 'Restock supplies',
+                                   'Buy useful balls and medicine with a cash reserve', tuple(targets), 'left', True))
+        self.restocking = False
+        if legendary and dict(snapshot.items).get(ITEMS['ULTRA_BALL'], 0) < 5 and not dict(snapshot.items).get(ITEMS['MASTER_BALL']):
+            return SupplyPlan(Goal('collect_plan', 'Plan another expedition',
+                                   'Earn supplies before another legendary attempt'), True,
+                              'Need money or bag space for legendary capture supplies')
+        return SupplyPlan(goal, bool(legendary))
+
+    def step(self, snapshot, goal_key, project):
+        """Request at the mart menu: sell surplus, buy the next supply, or leave."""
+        stock = DATA['marts'].get(WORLD.get(snapshot.map, {}).get('name'), [])
+        self.selling = ((self.selling and len(snapshot.items) > 15) or len(snapshot.items) >= 18
+                        or self.raising_funds(snapshot))
+        index = self._sale_choice(snapshot) if self.selling else None
+        if index is not None:
+            item = snapshot.items[index][0]
+            return MenuDecision(tap('b'), 'Sell spare valuables to cover the Safari Zone entry fee'
+                                if self.raising_funds(snapshot) else
+                                'Sell surplus items, or a limited TM only when the bag is full, to make room for story items',
+                                request=('sell', item, self._sale_quantity(snapshot, item)))
+        self.selling = False
+        item = self.item_for(snapshot, stock, goal_key, project)
+        prepared = item is None and legendary_project(project) and ITEMS['ULTRA_BALL'] in stock
+        request = ('buy', item, self._buy_quantity(snapshot, stock, goal_key, project, item)) if item else None
+        return MenuDecision(tap('b'), 'Restock balls and medicine while keeping a cash reserve', bool(prepared),
+                            request)
+
+    def _buy_quantity(self, snapshot, stock, goal_key, project, item):
+        """Units the one-at-a-time rule would buy in a row, replayed on a simulated bag and purse."""
+        price = PRICES.get(item, 0)
+        count = dict(snapshot.items).get(item, 0)
+        quantity = 1
+        while quantity < min(TRADE_LIMIT, 99 - count) and price:
+            items = tuple((i, q + quantity if i == item else q) for i, q in snapshot.items)
+            if item not in dict(snapshot.items):
+                items += ((item, quantity),)
+            after = replace(snapshot, items=items, money=snapshot.money - price * quantity)
+            if self.item_for(after, stock, goal_key, project) != item:
+                break
+            quantity += 1
+        return quantity
+
+    def _sale_quantity(self, snapshot, item):
+        """Units of ``item`` the one-at-a-time rule would sell in a row."""
+        price = PRICES.get(item, 0) // 2
+        quantity = 1
+        while quantity < TRADE_LIMIT:
+            items = tuple((i, q - quantity if i == item else q) for i, q in snapshot.items)
+            items = tuple(row for row in items if row[1])
+            if len(items) < len(snapshot.items):
+                break
+            after = replace(snapshot, items=items, money=snapshot.money + price * quantity)
+            index = self._sale_choice(after) if self.raising_funds(after) or len(after.items) > 15 else None
+            if index is None or after.items[index][0] != item:
+                break
+            quantity += 1
+        return quantity

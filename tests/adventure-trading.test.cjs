@@ -1,0 +1,211 @@
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const test = require('node:test')
+const vm = require('node:vm')
+const source = fs.readFileSync('pokesim/web/static/adventure-trading.js', 'utf8')
+const settle = async () => {
+  for (const tick of [1, 2, 3]) await new Promise(resolve => setImmediate(resolve))
+}
+function page(id, response, {api, base = `/games/${id}`} = {}) {
+  const elements = new Map()
+  const calls = []
+  let poll
+  const element = selector => {
+    if (!elements.has(selector)) elements.set(selector, {innerHTML: '', textContent: '', hidden: false, classList: {toggle() {}},
+      listeners: {}, addEventListener(type, fn) { this.listeners[type] = fn }, setAttribute(name, value) { this[name] = String(value) }})
+    return elements.get(selector)
+  }
+  vm.runInNewContext(source, {
+    document: {querySelector: element, hidden: false},
+    PokeSim: {adventureId: id, base, sprite: dex => `/games/${id}/sprites/${dex}.png?v=rom-portraits-1`, fetch: async path => {
+      calls.push(`/games/${id}${path}`)
+      return {ok: true, json: async () => response()}
+    }, ...(api ? {api} : {})}, setInterval(fn) { poll = fn },
+  })
+  return {element, calls, poll}
+}
+test('each Red adventure requests only its own trades and renders its own partner history', async () => {
+  const create = (id, partner) => page(id, () => ({adventure: {id, version: 'red', state: 'running'}, active: [], history: [
+    {phase: 'completed', decision: 'COMMIT', peer_name: partner, updated_at: 1000},
+    {phase: 'aborted', decision: 'ABORT', peer_name: 'Failed exchange', updated_at: 1000},
+  ]}))
+  const first = create('red-one', 'Blue <Ripple>')
+  const second = create('red-two', 'Red Ember')
+  await settle()
+  assert.deepEqual(first.calls, ['/games/red-one/api/interactions'])
+  assert.deepEqual(second.calls, ['/games/red-two/api/interactions'])
+  assert.match(first.element('#trade-history').innerHTML, /Blue &lt.Ripple&gt./)
+  assert.doesNotMatch(first.element('#trade-history').innerHTML, /Red Ember|Failed exchange/)
+  assert.match(second.element('#trade-history').innerHTML, /Red Ember/)
+})
+test('stopped history remains available and failed updates retain it with a reconnect notice', async () => {
+  let broken = false
+  const view = page('a', () => {
+    if (broken) throw new Error('offline')
+    return {adventure: {id: 'a', version: 'blue', state: 'stopped'}, active: [], history: [
+      {phase: 'completed', decision: 'COMMIT', peer_name: 'First Red', updated_at: 1000},
+    ]}
+  })
+  await settle()
+  assert.equal(view.element('#trade-lamp').title, 'Waiting for this adventure')
+  const saved = view.element('#trade-history').innerHTML
+  broken = true
+  view.poll()
+  await settle()
+  assert.equal(view.element('#trade-history').innerHTML, saved)
+  assert.equal(view.element('#trade-connection-note').hidden, false)
+})
+test('an unexpected adventure response cannot render another game history', async () => {
+  const view = page('a', () => ({adventure: {id: 'b'}, active: [], history: []}))
+  await settle()
+  assert.equal(view.element('#trade-history').innerHTML, '')
+  assert.equal(view.element('#trade-connection-note').hidden, false)
+})
+
+test('failed attempts explain missing trades and remain distinct from completed exchanges', async () => {
+  const view = page('red', () => ({
+    adventure: {id: 'red', version: 'red', state: 'running'}, active: [], history: [],
+    attention: {message: '3 recent trade attempts did not complete. An adventure could not reach the Cable Club.'},
+    recent_failures: [{phase: 'aborted', decision: 'ABORT', peer_name: 'Blue <Ripple>', updated_at: 1000,
+      failure_reason: 'An adventure could not reach the Cable Club.', error: '/private/worker/path'}],
+  }))
+  await settle()
+  assert.match(view.element('#trade-lamp').title, /3 recent.*Cable Club/)
+  // Attempts that did not complete sit in the one History list, next to completed trades.
+  const html = view.element('#trade-history').innerHTML
+  assert.match(html, /Blue &lt.Ripple&gt./)
+  assert.match(html, /Trade did not complete/)
+  assert.match(html, /could not reach the Cable Club/)
+  assert.doesNotMatch(html, /private|Trade completed/)
+  // The History tab shows the row count. Its tooltip splits completed from not.
+  assert.equal(view.element('#trade-history-count').textContent, '(1)')
+  assert.equal(view.element('#tab-history').title, '0 completed, 1 did not complete')
+})
+
+test('history lists completed trades and failed attempts together, newest first', async () => {
+  const view = page('red', () => ({
+    adventure: {id: 'red', version: 'red', state: 'running'}, active: [],
+    history: [{phase: 'completed', decision: 'COMMIT', peer_name: 'Older Blue', updated_at: 1000}],
+    recent_failures: [{phase: 'aborted', decision: 'ABORT', peer_name: 'Newer Green', updated_at: 2000}],
+  }))
+  await settle()
+  const html = view.element('#trade-history').innerHTML
+  assert.ok(html.indexOf('Newer Green') < html.indexOf('Older Blue'))
+})
+
+test('a new attempt is shown as active even when earlier attempts failed', async () => {
+  const view = page('red', () => ({
+    adventure: {id: 'red', version: 'red', state: 'running'},
+    active: [{phase: 'preparing', peer_name: 'Blue'}], history: [],
+    attention: {message: 'A previous attempt did not complete.'}, recent_failures: [],
+  }))
+  await settle()
+  assert.equal(view.element('#trade-lamp').title, 'Trading now')
+  assert.match(view.element('#trade-active').innerHTML, /Getting ready for the Cable Club/)
+  assert.equal(view.element('#current-exchange-section').hidden, false)
+})
+
+test('completed cards show the exact sent and received Pokemon with scoped sprites and evolution', async () => {
+  const view = page('red', () => ({
+    adventure: {id: 'red', version: 'red', state: 'running'}, active: [],
+    history: [{phase: 'completed', decision: 'COMMIT', peer_id: 'b'.repeat(32), peer_name: 'Blue Ripple', updated_at: 1000,
+      sent: {name: 'Machoke', nickname: 'STRONG <GUY>', level: 42, dex: 67},
+      received: {name: 'Machamp', nickname: 'BIG ARMS', level: 55, dex: 68, evolved_from: {name: 'Machoke', dex: 67}}}],
+  }))
+  await settle()
+  const html = view.element('#trade-history').innerHTML
+  assert.match(html, /You sent/)
+  assert.match(html, /You received/)
+  assert.match(html, /\/sprites\/67.png/)
+  assert.match(html, /\/sprites\/68.png/)
+  assert.match(html, /<div class="plate plate--bay"><img src="\/games\/red\/sprites\/68\.png\?v=rom-portraits-1" alt=""/)
+  assert.match(html, /STRONG &lt.GUY&gt./)
+  assert.match(html, /BIG ARMS/)
+  assert.match(html, /Lv. 42/)
+  assert.match(html, /Lv. 55/)
+  assert.match(html, /Machoke → Machamp/)
+  assert.match(html, /pokedex#68/)
+  assert.match(html, /<time datetime="1970-01-01T00:16:40.000Z">/)
+  // A finished trade's partner link opens the partner's History tab.
+  assert.match(html, new RegExp(`/games/${'b'.repeat(32)}/trading#history`))
+  assert.equal(view.element('#trade-history-count').textContent, '(1)')
+  assert.equal(view.element('#tab-history').title, '1 completed')
+})
+
+test('planned and failed trades never claim a Pokemon was received or evolved', async () => {
+  const details = {peer_name: 'Blue', sent: {name: 'Abra', nickname: 'Abra', dex: 63, level: 12},
+    received: {name: 'Machoke', dex: 67, level: 28, evolved_from: {name: 'Machop'}}}
+  const view = page('red', () => ({
+    adventure: {id: 'red', version: 'red', state: 'running'},
+    active: [{...details, phase: 'preparing'}], history: [],
+    recent_failures: [{...details, phase: 'aborted', decision: 'ABORT', updated_at: 1000}],
+  }))
+  await settle()
+  assert.match(view.element('#trade-active').innerHTML, /Sending/)
+  assert.match(view.element('#trade-active').innerHTML, /Receiving/)
+  assert.match(view.element('#trade-history').innerHTML, /Planned offer/)
+  assert.match(view.element('#trade-history').innerHTML, /Planned return/)
+  for (const area of ['#trade-active', '#trade-history']) {
+    assert.doesNotMatch(view.element(area).innerHTML, /You received|Trade evolution|Saved in both/)
+  }
+})
+
+test('older trades and invalid sprite identifiers render honest fallbacks without broken image URLs', async () => {
+  const view = page('red', () => ({
+    adventure: {id: 'red', version: 'red', state: 'running'}, active: [],
+    history: [{phase: 'completed', decision: 'COMMIT', peer_name: '<script>', updated_at: 1000,
+      sent: null, received: {name: 'Unknown', dex: '../../private', nickname: 'Unknown', level: null}}],
+  }))
+  await settle()
+  const html = view.element('#trade-history').innerHTML
+  assert.match(html, /Pokémon details unavailable/)
+  assert.doesNotMatch(html, /<img|undefined|Lv. null|<script>/)
+})
+
+test('Gold and Silver species past 151 keep their portrait and Pokédex link', async () => {
+  const view = page('gold', () => ({
+    adventure: {id: 'gold', version: 'gold', state: 'running'}, active: [],
+    history: [{phase: 'completed', decision: 'COMMIT', peer_name: 'Silver', updated_at: 1000,
+      sent: {name: 'Totodile', level: 12, dex: 158}, received: {name: 'Larvitar', level: 20, dex: 246}}],
+  }))
+  await settle()
+  const html = view.element('#trade-history').innerHTML
+  assert.match(html, /\/sprites\/246\.png/)
+  assert.match(html, /pokedex#158/)
+  assert.match(html, /#246/)
+})
+
+test('a trade waiting for a busy game says so and its Cancel key takes it out of line', async () => {
+  const tid = 'd'.repeat(32)
+  let queued = [{id: tid, state: 'queued', position: 1, peer_id: 'b'.repeat(32), peer_name: 'Blue', busy: true, cancellable: true}]
+  const posted = []
+  const api = async (path, options) => {
+    posted.push([path, options.method])
+    queued = []
+    return {ok: true, json: async () => ({state: 'cancelled'})}
+  }
+  const view = page('red', () => ({adventure: {id: 'red', version: 'red', state: 'running'}, active: [], history: [], queued}), {api})
+  await settle()
+  const html = view.element('#trade-active').innerHTML
+  assert.match(html, /Waiting for the Cable Club/)
+  assert.match(html, /Next for the Cable Club\. Busy with a trade\. Your trade will wait in line\./)
+  assert.match(html, new RegExp(`<button type="button" class="key queued-cancel" data-cancel="${tid}">Cancel trade</button>`))
+  const button = {dataset: {cancel: tid}, disabled: false}
+  view.element('#trade-active').listeners.click({target: {closest: () => button}})
+  await settle()
+  assert.deepEqual(posted, [[`/api/v1/interactions/trade-builder/${tid}/cancel`, 'POST']])
+  assert.equal(button.disabled, true)
+  assert.match(view.element('#trade-active').innerHTML, /No exchange in progress/)
+})
+
+test('a trade that has started, or a view link, offers no Cancel key', async () => {
+  const entry = {id: 'd'.repeat(32), position: 1, peer_name: 'Blue', busy: false}
+  const owner = page('red', () => ({adventure: {id: 'red', state: 'running'}, active: [], history: [],
+    queued: [{...entry, state: 'starting', cancellable: false}]}), {api: async () => ({ok: true})})
+  const viewer = page('red', () => ({adventure: {id: 'red', state: 'running'}, active: [], history: [],
+    queued: [{...entry, state: 'queued', cancellable: true}]}), {base: '/view/red'})
+  await settle()
+  assert.match(owner.element('#trade-active').innerHTML, /<p class="queued-place">Checking both Pokémon<\/p>/)
+  for (const view of [owner, viewer]) assert.doesNotMatch(view.element('#trade-active').innerHTML, /data-cancel|Cancel trade/)
+  assert.match(viewer.element('#trade-active').innerHTML, /Next for the Cable Club/)
+})

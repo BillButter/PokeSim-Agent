@@ -1,0 +1,601 @@
+/* ==========================================================================
+   Trading, on the Bench Instrument panel.
+   Serves /trading (trading block, matches, history) and the per-adventure
+   trading page in the library. Builds only on tokens.css and panel.css.
+   ========================================================================== */
+
+main.shell { padding-bottom: var(--s7); }
+
+/* ---- page head ---------------------------------------------------------- */
+.page-head { padding-bottom: var(--s4); }
+.page-lede {
+  max-width: 60ch;
+  margin-top: var(--s3);
+  color: var(--ink-2);
+}
+
+/* ---- status panel: one lamp, one reading, one sentence ------------------ */
+.trade-overview {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--s4) var(--s6);
+  padding: var(--s4) var(--s5);
+  background: var(--panel);
+  border: var(--hair) solid var(--rule);
+  box-shadow: var(--key-inset);
+}
+.trade-overview-read { flex: 1 1 320px; min-width: 0; }
+.trade-overview-read .micro { display: flex; align-items: center; gap: var(--s2); }
+.trade-overview .headline {
+  margin-top: var(--s2);
+  font: var(--f-read) / 1.1 var(--font-panel);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  overflow-wrap: anywhere;
+}
+.trade-overview .body { margin-top: var(--s2); color: var(--ink-2); }
+
+.trade-notice {
+  margin-top: var(--s3);
+  padding: var(--s3) var(--s4);
+  background: var(--panel-2);
+  border: var(--hair) solid var(--rule-faint);
+  border-left: 3px solid var(--warn-lamp);
+  color: var(--ink);
+}
+
+/* ---- view switch: three keys in one strip -------------------------------- */
+.view-switch {
+  display: flex;
+  margin-top: var(--s6);
+  border: var(--hair) solid var(--rule);
+  background: var(--rule);
+  gap: 1px;
+  width: fit-content;
+  max-width: 100%;
+}
+.view-switch button {
+  flex: 1 1 auto;
+  min-height: 40px;
+  padding: 0 var(--s4);
+  background: var(--panel-2);
+  border: 0;
+  box-shadow: var(--key-inset);
+  font: var(--f-legend) / 1 var(--font-panel);
+  letter-spacing: var(--track-legend);
+  text-transform: uppercase;
+  color: var(--ink-2);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background var(--t);
+}
+.view-switch button:hover { background: var(--panel); color: var(--ink); }
+.view-switch button[aria-pressed="true"] {
+  background: var(--well);
+  box-shadow: var(--well-inset);
+  color: var(--ink);
+}
+.view-switch button[aria-pressed="true"]::before {
+  content: "";
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: var(--s2);
+  vertical-align: 2px;
+  background: var(--signal-lamp);
+  box-shadow: inset 0 0 0 1px var(--rule);
+}
+
+/* ---- sections ----------------------------------------------------------- */
+.trade-content,
+.trade-section { margin-top: var(--s6); }
+.trade-section[hidden] { display: none; }
+.section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--s2) var(--s4);
+  padding-bottom: var(--s3);
+  margin-bottom: var(--s4);
+  border-bottom: var(--hair) solid var(--rule);
+}
+.trade-help {
+  max-width: 70ch;
+  margin: calc(-1 * var(--s1)) 0 var(--s4);
+  color: var(--ink-2);
+}
+.empty-note {
+  padding: var(--s5) var(--s4);
+  background: var(--well);
+  border: var(--hair) dashed var(--rule);
+  color: var(--ink-2);
+}
+
+/* Extra stamp tones for trade state. */
+.tag { display: inline-flex; align-items: center; gap: var(--s2); }
+.tag--ok { color: var(--ok); border-color: var(--ok); }
+.tag--signal { color: var(--signal); border-color: var(--signal); }
+
+/* ---- plates: the party's 112px bay, so 56px cartridge art sits at 2x and
+   96px packs at 1x, never resampled. ---------------------------------------- */
+.plate--bay { flex: none; }
+.plate--empty { background: transparent; border-style: dashed; box-shadow: none; }
+
+/* ---- one side of a swap ------------------------------------------------ */
+.swap-read h4 {
+  margin: 0;
+  font: 600 var(--f-body) / 1.3 var(--font-text);
+  overflow-wrap: anywhere;
+}
+.swap-sub { color: var(--ink-2); font-size: 14px; overflow-wrap: anywhere; }
+
+/* ---- deals: one exchange, sender to receiver ---------------------------- */
+.deal-list { display: grid; gap: var(--s3); }
+.deal {
+  container-type: inline-size;
+  background: var(--panel);
+  border: var(--hair) solid var(--rule);
+  box-shadow: var(--key-inset);
+}
+.deal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--s2) var(--s4);
+  padding: var(--s3) var(--s4);
+  border-bottom: var(--hair) solid var(--rule-faint);
+}
+.deal-head h3 { font: 600 var(--f-body) / 1.3 var(--font-text); overflow-wrap: anywhere; }
+.queued-card .trade-help, .queued-place { margin: 0; padding: var(--s3) var(--s4); color: var(--ink-2); }
+.swap {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--s4);
+  max-width: 880px;
+  padding: var(--s4);
+}
+.swap-side {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--s4);
+  min-width: 0;
+}
+.swap-read { min-width: 0; display: grid; gap: 2px; }
+.swap-read .micro { margin-bottom: 2px; }
+.swap-note { font-size: 13px; color: var(--ink-3); }
+.swap-note .micro { color: var(--signal); margin-right: var(--s1); }
+.swap-arrow {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  background: var(--well);
+  border: var(--hair) solid var(--rule-faint);
+  box-shadow: var(--well-inset);
+  font: var(--f-legend) / 1 var(--font-panel);
+  color: var(--ink-2);
+}
+.deal-reason {
+  padding: 0 var(--s4) var(--s4);
+  color: var(--ink-2);
+}
+.deal-reason--crit {
+  margin: 0 var(--s4) var(--s4);
+  padding: var(--s3) var(--s4);
+  background: var(--panel-2);
+  border-left: 3px solid var(--crit-lamp);
+  color: var(--crit);
+}
+.swap + .deal-reason--crit { margin-top: 0; }
+.deal-head + .deal-reason--crit { margin-top: var(--s4); }
+.deal-foot {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--s2) var(--s4);
+  padding: var(--s2) var(--s4);
+  border-top: var(--hair) solid var(--rule-faint);
+  font: var(--f-micro) / 1.4 var(--font-mono);
+  letter-spacing: var(--track-micro);
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+/* Narrow cards stack sender over receiver, the arrow turned to point down. */
+@container (max-width: 479px) {
+  .swap { grid-template-columns: minmax(0, 1fr); gap: var(--s3); }
+  .swap-arrow { width: 32px; height: 32px; margin-left: 41px; transform: rotate(90deg); }
+}
+
+/* ---- attempts that did not complete ------------------------------------- */
+.attempts {
+  background: var(--panel-2);
+  border: var(--hair) solid var(--rule);
+}
+.attempts > summary {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  min-height: 40px;
+  padding: 0 var(--s3);
+  font: var(--f-micro) / 1.4 var(--font-mono);
+  letter-spacing: var(--track-micro);
+  text-transform: uppercase;
+  color: var(--ink-2);
+  cursor: pointer;
+  list-style: none;
+}
+.attempts > summary::-webkit-details-marker { display: none; }
+.attempts > summary::before { content: "\25B6"; font: 8px / 1 var(--font-panel); color: var(--ink-3); }
+.attempts[open] > summary::before { content: "\25BC"; }
+.attempts > summary:hover { color: var(--ink); }
+.attempts > .deal-list { padding: var(--s3); border-top: var(--hair) solid var(--rule-faint); }
+
+/* ---- small screens ------------------------------------------------------ */
+@media (max-width: 640px) {
+  .trade-overview { padding: var(--s4); }
+  .trade-overview .headline { font-size: var(--f-legend); line-height: 1.35; }
+  .trade-pc-link { width: 100%; white-space: normal; text-align: center; line-height: 1.2; padding-block: var(--s2); }
+  .view-switch { width: 100%; }
+  .view-switch button { padding: 0 var(--s2); min-height: 44px; }
+  .view-switch button[aria-pressed="true"]::before { display: none; }
+  .offer { padding: var(--s3); }
+  .offer-actions .partner-actions { width: 100%; }
+  .offer-actions .partner-actions button { flex: 1 1 auto; min-height: 44px; }
+}
+@media (max-width: 400px) {
+  .view-switch { flex-wrap: wrap; }
+  .view-switch button { flex-basis: 100%; }
+}
+
+@media (forced-colors: active) {
+  .trade-overview, .offer, .deal, .view-switch button, .offer-actions .partner-actions button { border: 1px solid CanvasText; }
+  .view-switch button[aria-pressed="true"] { outline: 2px solid Highlight; }
+}
+
+/* ---- trade progress --------------------------------------------------- */
+.manual-progress-card { margin: 0 var(--s4) var(--s4) }
+.manual-progress-card { padding: var(--s3) var(--s4) }
+.manual-progress-card { background: var(--panel-2) }
+.manual-progress-card { border: var(--hair) solid var(--rule-faint) }
+.manual-steps { display: grid }
+.manual-steps { gap: var(--s2) }
+.manual-steps { margin: 0 }
+.manual-steps { padding-left: var(--s5) }
+.manual-step { color: var(--ink-3) }
+.manual-step.is-done { color: var(--ok) }
+.manual-step.is-now { color: var(--ink) }
+.manual-step.is-now { font-weight: 600 }
+.manual-text { margin-top: var(--s2) }
+.manual-text { color: var(--ink-2) }
+.manual-result { margin-top: var(--s2) }
+.manual-result { font-weight: 600 }
+.manual-result { color: var(--ink) }
+.manual-result.error { color: var(--crit) }
+
+/* ---- one page: the overview is just the automatic trading switch ---- */
+#trade-overview { padding: 0 }
+#trade-overview { gap: var(--s3) }
+#trade-overview { background: none }
+#trade-overview { border: 0 }
+#trade-overview { box-shadow: none }
+.auto-switch .lamp { flex: 0 0 auto }
+.trade-overview > .trade-notice { flex: 1 1 100% }
+.trade-overview > .trade-notice { margin: 0 }
+#make-trade, #trade-history-section, #current-exchange-section { scroll-margin-top: var(--s7) }
+
+/* ---- two tabs under the switch: Make a trade and History ---------------- */
+.trade-tabs { display: flex }
+.trade-tabs { flex-wrap: wrap }
+.trade-tabs { gap: var(--s1) }
+.trade-tabs { margin: var(--s5) 0 0 }
+.trade-tabs { border-bottom: var(--hair) solid var(--rule) }
+.trade-tabs [role="tab"] { display: inline-flex }
+.trade-tabs [role="tab"] { align-items: center }
+.trade-tabs [role="tab"] { gap: var(--s2) }
+.trade-tabs [role="tab"] { min-height: 44px }
+.trade-tabs [role="tab"] { padding: 0 var(--s4) }
+.trade-tabs [role="tab"] { margin-bottom: calc(-1 * var(--hair)) }
+.trade-tabs [role="tab"] { background: var(--panel-2) }
+.trade-tabs [role="tab"] { color: var(--ink-2) }
+.trade-tabs [role="tab"] { border: var(--hair) solid var(--rule-faint) }
+.trade-tabs [role="tab"] { font: var(--f-legend) / 1 var(--font-panel) }
+.trade-tabs [role="tab"] { letter-spacing: var(--track-legend) }
+.trade-tabs [role="tab"] { white-space: nowrap }
+.trade-tabs [role="tab"] { text-transform: uppercase }
+.trade-tabs [role="tab"] { cursor: pointer }
+.trade-tabs [role="tab"]:hover { color: var(--ink) }
+.trade-tabs [role="tab"]:focus-visible { outline: 2px solid var(--signal) }
+.trade-tabs [role="tab"]:focus-visible { outline-offset: -4px }
+.trade-tabs [role="tab"][aria-selected="true"] { background: var(--panel) }
+.trade-tabs [role="tab"][aria-selected="true"] { color: var(--ink) }
+.trade-tabs [role="tab"][aria-selected="true"] { border-color: var(--rule) }
+.trade-tabs [role="tab"][aria-selected="true"] { border-bottom-color: var(--panel) }
+.trade-tabs [role="tab"][aria-selected="true"] { box-shadow: inset 0 3px 0 var(--signal) }
+.tab-count { font: 12px / 1 var(--font-panel) }
+.tab-count { color: var(--ink-2) }
+.tab-count { font-variant-numeric: tabular-nums }
+.tab-count:empty { display: none }
+.trade-panel { padding: var(--s5) 0 var(--s6) }
+.trade-panel[hidden] { display: none }
+.trade-panel:focus-visible { outline: 2px solid var(--signal) }
+.trade-panel:focus-visible { outline-offset: 2px }
+.trade-panel > .trade-section { margin-top: 0 }
+.trade-panel > .trade-section:not([hidden]) ~ .trade-section { margin-top: var(--s6) }
+@media (max-width: 640px) {
+  .trade-tabs [role="tab"] { flex: 1 1 0 }
+  .trade-tabs [role="tab"] { justify-content: center }
+  /* Untracked and tighter, so both uppercase legends stay on one row at 360px. */
+  .trade-tabs [role="tab"] { padding: 0 var(--s2) }
+  .trade-tabs [role="tab"] { gap: var(--s1) }
+  .trade-tabs [role="tab"] { letter-spacing: 0 }
+}
+@media (forced-colors: active) {
+  .trade-tabs [role="tab"][aria-selected="true"] { outline: 2px solid Highlight }
+}
+.builder-slot .legend { font-size: var(--f-legend) }
+
+/* ---- game and Cable Club lists ------------------------------------------ */
+.pick-search { display: grid }
+.pick-search[hidden] { display: none }
+.pick-search { gap: var(--s1) }
+.pick-search { margin: var(--s2) 0 var(--s3) }
+.pick-search { max-width: 420px }
+.pick-search input { min-height: 44px }
+.pick-search input { padding: 0 var(--s3) }
+.pick-search input { background: var(--well) }
+.pick-search input { color: var(--ink) }
+.pick-search input { border: var(--hair) solid var(--rule) }
+.pick-search input { font: 16px / 1.2 var(--font-mono) }
+.pick-list { display: grid }
+.pick-list { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)) }
+.pick-list { gap: var(--s2) }
+.pick-list { max-height: 420px }
+.pick-list { overflow-y: auto }
+.pick-list { padding: 2px }
+.pick-item { display: flex }
+.pick-item { align-items: center }
+.pick-item { gap: var(--s3) }
+.pick-item { min-height: 56px }
+.pick-item { padding: var(--s2) var(--s3) }
+.pick-item { text-align: left }
+.pick-item { color: var(--ink) }
+.pick-item { background: var(--panel-2) }
+.pick-item { border: var(--hair) solid var(--rule) }
+.pick-item { cursor: pointer }
+.pick-item:hover:not(:disabled), .pick-item:focus-visible { border-color: var(--signal) }
+.pick-item[aria-checked="true"] { border-color: var(--signal) }
+.pick-item[aria-checked="true"] { box-shadow: inset 4px 0 0 var(--signal) }
+.pick-item:disabled { cursor: not-allowed }
+.pick-item:disabled { color: var(--ink-3) }
+.pick-item:disabled { background: var(--panel) }
+.pick-item:disabled { border-style: dashed }
+a.pick-item { text-decoration: none }
+.pick-item.is-unavailable { cursor: not-allowed }
+.pick-item.is-unavailable { color: var(--ink-3) }
+.pick-item.is-unavailable { background: var(--panel) }
+.pick-item.is-unavailable { border-style: dashed }
+.pick-read { display: grid }
+.pick-read { gap: 2px }
+.pick-read { min-width: 0 }
+.pick-read b { overflow-wrap: anywhere }
+.pick-reason { font-size: 13px }
+.pick-reason { color: var(--warn) }
+
+/* ---- automatic trading -------------------------------------------------- */
+.auto-switch { display: inline-flex }
+.auto-switch { align-items: center }
+.auto-switch { gap: var(--s2) }
+.auto-switch { min-height: 44px }
+.auto-switch { padding: 0 var(--s4) }
+.auto-switch { background: var(--panel-2) }
+.auto-switch { color: var(--ink) }
+.auto-switch { border: var(--hair) solid var(--rule) }
+.auto-switch { font: var(--f-legend) / 1 var(--font-panel) }
+.auto-switch { text-transform: uppercase }
+.auto-switch { cursor: pointer }
+.auto-switch:disabled { cursor: not-allowed }
+.auto-switch:disabled { opacity: 0.6 }
+.auto-switch:focus-visible { outline: 2px solid var(--signal) }
+.auto-switch:focus-visible { outline-offset: 2px }
+#auto-switch-state { font-family: var(--font-panel) }
+#auto-switch-state { font-size: 12px }
+.auto-switch-track { position: relative }
+.auto-switch-track { width: 36px }
+.auto-switch-track { height: 20px }
+.auto-switch-track { background: var(--well) }
+.auto-switch-track { border: var(--hair) solid var(--rule) }
+.auto-switch-track::after { content: "" }
+.auto-switch-track::after { position: absolute }
+.auto-switch-track::after { top: 2px }
+.auto-switch-track::after { left: 2px }
+.auto-switch-track::after { width: 14px }
+.auto-switch-track::after { height: 14px }
+.auto-switch-track::after { background: var(--ink-3) }
+.auto-switch[aria-checked="true"] .auto-switch-track { background: var(--signal) }
+.auto-switch[aria-checked="true"] .auto-switch-track::after { left: 18px }
+.auto-switch[aria-checked="true"] .auto-switch-track::after { background: var(--panel) }
+
+@media (max-width: 640px) {
+  .auto-switch { width: 100% }
+  .pick-list { grid-template-columns: minmax(0, 1fr) }
+  .pick-search { max-width: none }
+}
+@media (forced-colors: active) {
+  .pick-item[aria-checked="true"] { outline: 2px solid Highlight }
+}
+
+/* ---- trade setting saved note ------------------------------------------ */
+.trade-saved { flex-basis: 100% }
+.trade-saved { font-size: 13px }
+.trade-saved { color: var(--ok) }
+.trade-saved.is-error { color: var(--crit) }
+
+
+/* ---- Pokémon cards on the Trading page (the PC page's cards, mon-grid.css) ---- */
+.mon-toolbar { margin: var(--s3) 0; }
+.trade-search-row[hidden] { display: none; }
+.pick-grid, .auto-list, .auto-grid { margin-top: var(--s2); }
+
+/* The chosen card: a signal edge, like a pressed key. */
+.pc-mon.is-chosen {
+  border-color: var(--signal);
+  box-shadow: var(--key-inset), inset 4px 0 0 var(--signal);
+}
+/* A card that cannot be picked stays in place, greyed and dashed, with its reason. */
+.pc-mon.is-blocked {
+  background: var(--well);
+  border-style: dashed;
+  box-shadow: none;
+  color: var(--ink-3);
+  cursor: help;
+}
+.pc-mon.is-blocked .pc-plate { opacity: 0.45; filter: grayscale(1); }
+.pc-mon.is-blocked .pc-name { color: var(--ink-2); }
+.pc-mon.is-blocked:hover { background: var(--panel-2); }
+.pc-blocked {
+  display: block;
+  margin-top: var(--s1);
+  padding-left: var(--s2);
+  border-left: 2px solid var(--warn-lamp);
+  font-size: 13px;
+  line-height: 1.35;
+  color: var(--warn);
+  overflow-wrap: anywhere;
+}
+
+/* The trade setting stamp. Can trade is the quiet default. */
+.trade-tag { white-space: nowrap; }
+.trade-tag--auto { color: var(--ink-3); border-color: var(--rule-faint); }
+.trade-tag--first { color: var(--signal); border-color: var(--signal); }
+.trade-tag--keep { color: var(--ok); border-color: var(--ok); }
+.trade-tag--protected { color: var(--ink-2); border-style: dashed; }
+
+/* The popup's reason, setting and Choose another key sit under its head. */
+.trade-detail-action { display: flex; flex-wrap: wrap; align-items: end; gap: var(--s3) var(--s4); }
+.trade-detail-action .key { min-height: 44px; max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+.trade-detail-setting { display: grid; gap: var(--s1); }
+.trade-detail-setting .trade-setting select { min-height: 44px; min-width: 180px; }
+.pick-blocked-reason {
+  display: grid;
+  gap: var(--s1);
+  padding-left: var(--s3);
+  border-left: 3px solid var(--warn-lamp);
+  color: var(--ink);
+}
+
+/* Legacy page: each card keeps its setting under it. */
+.auto-card { display: grid; gap: var(--s2); align-content: start; }
+.auto-card .trade-setting select { width: 100%; }
+
+/* A long section name wraps onto clean lines on a phone. */
+.section-head .legend { line-height: 1.3; }
+
+/* Type and DV stamps on offer and history cards. */
+.swap-tags { display: flex; flex-wrap: wrap; gap: var(--s1); margin: 2px 0; }
+.swap-read .type-badge, .swap-read .dv-badge { font-size: 11px; }
+
+/* Game choices: one lamp each, green when it can take the Pokémon. */
+.pick-game { align-items: flex-start; }
+.pick-game .lamp { flex: none; margin-top: 4px; }
+
+@media (max-width: 640px) {
+  .trade-detail-action > * { flex: 1 1 100%; }
+  .trade-detail-setting .trade-setting select { width: 100%; }
+}
+@media (forced-colors: active) {
+  .pc-mon.is-chosen { outline: 2px solid Highlight; }
+  .pc-mon.is-blocked { border: 1px dashed GrayText; color: GrayText; }
+}
+
+/* ---- trade builder: a game, then one slot each side ------------------- */
+.builder { display: grid; gap: var(--s4); }
+.builder-partner { display: flex; flex-wrap: wrap; align-items: end; gap: var(--s2) var(--s4); }
+.builder-game { display: grid; gap: var(--s1); flex: 1 1 280px; max-width: 460px; }
+.builder-game select { width: 100%; min-height: 44px; }
+.builder-from { margin: 0 0 var(--s2); color: var(--ink-2); }
+.builder-reason { margin: 0; }
+.builder-reason[hidden] { display: none; }
+.builder-slots {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: start;
+  gap: var(--s3);
+}
+.builder-slot { display: grid; gap: var(--s2); min-width: 0; }
+.builder-slot .section-head { margin: 0; }
+/* Centred on the slots, not on the slots plus their headings: the top margin
+   matches the heading row, so the chip and its glyph sit level with the slot middle. */
+.builder-arrow { align-self: center; margin-top: calc(var(--s6) + var(--s2)); }
+.slot-body { display: grid; gap: var(--s2); }
+.slot-body .pick-chosen-grid { grid-template-columns: minmax(0, 1fr); max-width: 380px; }
+.slot-empty {
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: var(--s1);
+  min-height: 132px;
+  padding: var(--s4);
+  color: var(--ink-2);
+  background: var(--well);
+  border: 2px dashed var(--rule);
+  cursor: pointer;
+  text-align: center;
+  font: inherit;
+}
+.slot-empty b { font: var(--f-read) / 1.2 var(--font-panel); letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink); }
+.slot-empty:hover:not(:disabled), .slot-empty:focus-visible { border-color: var(--signal); color: var(--ink); }
+.slot-empty:disabled { cursor: not-allowed; opacity: 0.6; }
+.slot-plus { font: 28px / 1 var(--font-mono); color: var(--signal); }
+.pick-change { min-height: 44px; justify-self: start; }
+.builder-summary { margin: 0; }
+.builder-summary.is-reason { color: var(--warn); }
+.builder-actions { display: flex; flex-wrap: wrap; gap: var(--s2); }
+.builder-actions .key { min-height: 44px; }
+
+/* The picker: a modal that fills a phone, keeps its toolbar and scrolls its grid. */
+.pick-dialog {
+  width: min(1100px, calc(100% - 2 * var(--s4)));
+  max-width: none;
+  height: min(860px, calc(100dvh - 2 * var(--s5)));
+  max-height: none;
+  padding: 0;
+  background: var(--panel);
+  color: var(--ink);
+  border: var(--hair) solid var(--rule);
+  box-shadow: var(--key-inset), 6px 6px 0 var(--bevel-lo);
+}
+.pick-dialog[open] { display: flex; flex-direction: column; }
+.pick-dialog::backdrop { background: rgba(10, 12, 10, 0.55); }
+.pick-dialog-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s3);
+  padding: var(--s3) var(--s4);
+  border-bottom: var(--hair) solid var(--rule);
+  background: var(--panel-2);
+}
+.pick-dialog-head .legend { margin: 0; overflow-wrap: anywhere; }
+.pick-dialog-head .close-detail { position: static; flex: none; min-height: 44px; }
+.pick-dialog > .trade-notice { margin: var(--s3) var(--s4) 0; }
+.pick-pane { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; padding: 0 var(--s4) var(--s4); }
+.pick-pane[hidden] { display: none; }
+.pick-pane .pick-grid { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 2px; align-content: start; }
+
+/* Suggested trades wait above the tabs. */
+
+@media (max-width: 640px) {
+  .builder-slots { grid-template-columns: minmax(0, 1fr); }
+  .builder-arrow { justify-self: center; margin-top: 0; transform: rotate(90deg); }
+  .builder-actions .key { flex: 1 1 auto; }
+  .pick-change { justify-self: stretch; }
+  .pick-dialog { width: 100%; height: 100dvh; margin: 0; border: 0; box-shadow: none; }
+  .pick-dialog-head { padding: var(--s2) var(--s3); }
+  .pick-pane { padding: 0 var(--s3) var(--s3); }
+}

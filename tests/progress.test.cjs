@@ -1,0 +1,83 @@
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const test = require('node:test')
+const vm = require('node:vm')
+const source = fs.readFileSync('pokesim/web/static/progress.js', 'utf8')
+
+function load(present = false, dexTotal = null) {
+  const elements = new Map()
+  const element = selector => {
+    if (!elements.has(selector)) elements.set(selector, {hidden: true, textContent: '', innerHTML: ''})
+    return elements.get(selector)
+  }
+  const context = vm.createContext({
+    document: {querySelector: selector => selector.startsWith('meta[') ? (dexTotal ? {content: String(dexTotal)} : null) : present ? element(selector) : null, hidden: false},
+    setInterval() {}, Date, Math, Number, String,
+    PokeSim: {fetch: async () => ({ok: true, json: async () => []})},
+  })
+  vm.runInContext(source, context)
+  return {Progress: context.Progress, element}
+}
+
+test('a step line holds each value until the next change and runs on to now', () => {
+  const {Progress} = load()
+  const rows = [{ts: 0, owned: 0}, {ts: 50, owned: 151}]
+  assert.equal(Progress.stepPath(rows, 'owned', 0, 100, 151), 'M0.0,61.0H300.0V3.0H600')
+})
+
+test('rows without a value, like backfilled seen counts, are skipped', () => {
+  const {Progress} = load()
+  const rows = [{ts: 0, seen: null}, {ts: 10, seen: 4}]
+  assert.equal(Progress.stepPath(rows, 'seen', 0, 10, 8), 'M600.0,32.0H600')
+  assert.equal(Progress.stepPath([{ts: 0, seen: null}], 'seen', 0, 10, 8), '')
+})
+
+test('badges give way to the long goals, which start where their history does', () => {
+  const {Progress} = load()
+  const rows = [{ts: 0, owned: 10, level100: null, perfect: null, league: 0},
+    {ts: 5, owned: 9, level100: 3, perfect: 0, league: 4}]
+  const [owned, level100, perfect, league] = Progress.describe(rows, 10)
+  assert.deepEqual([owned.first, owned.last, owned.max], [10, 9, 151])
+  assert.deepEqual([level100.first, level100.last, level100.max], [3, 3, 151])
+  assert.deepEqual([perfect.last, perfect.max, perfect.fixed], [0, 1, false])
+  assert.equal(league.max, 4)
+  assert.equal(league.path, 'M0.0,61.0H300.0V3.0H600')
+})
+
+test('the section stays hidden until there is history, then describes each line', () => {
+  const {Progress, element} = load(true)
+  Progress.render([])
+  assert.equal(element('#road').hidden, true)
+  Progress.render([{ts: 0, owned: 1, badges: 0, league: 0}, {ts: 86400 * 3, owned: 40, badges: 3, league: 0, level100: 2, perfect: 1}], 86400 * 3)
+  assert.equal(element('#road').hidden, false)
+  assert.match(element('#road-span').textContent, /, 3 days$/)
+  const html = element('#road-charts').innerHTML
+  assert.match(html, /aria-label="Pokédex registered: from 1 to 40"/)
+  assert.match(html, /aria-label="League wins: 0 throughout"/)
+  assert.match(html, />40<span class="unit">\/151<\/span>/)
+  assert.match(html, /aria-label="Perfect finds: 1 throughout"/)
+  assert.match(html, />1<\/strong>/)
+  assert.doesNotMatch(html, /Badges/)
+})
+
+test('missing observations leave gaps instead of extending a stale value', () => {
+  const {Progress} = load()
+  const rows = [{ts: 0, power: 5}, {ts: 20, power: null}, {ts: 50, power: 10}]
+  assert.equal(Progress.stepPath(rows, 'power', 0, 100, 10), 'M0.0,32.0H120.0M300.0,3.0H600')
+  assert.equal(Progress.stepPath(rows.slice(0, 2), 'power', 0, 100, 10), 'M0.0,32.0H120.0')
+})
+
+test('focused DV scale shows small improvements within labeled bounds', () => {
+  const {Progress} = load()
+  const [series] = Progress.describe([{ts: 0, dv: 68}, {ts: 10, dv: 69}], 10,
+    [{key: 'dv', max: 100, zoom: true}])
+  assert.equal(series.min, 67)
+  assert.equal(series.max, 70)
+  assert.equal(series.path, 'M0.0,41.7H600.0V22.3H600')
+})
+
+test('Gold and Silver charts measure the Pokédex against 251', () => {
+  const {Progress} = load(false, 251)
+  const [owned, level100] = Progress.describe([{ts: 0, owned: 146, level100: 3}], 10)
+  assert.deepEqual([owned.max, level100.max], [251, 251])
+})

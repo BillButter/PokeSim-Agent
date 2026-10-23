@@ -1,5 +1,5 @@
 [Unit]
-Description=PokeSim Agent - PyBoy emulator with a local web dashboard and per-game AI
+Description=PokeSim Agent - upstream PokeSim autopilot with a local web library and per-game AI
 Documentation=https://github.com/BillButter/PokeSim-Agent
 After=network-online.target
 Wants=network-online.target
@@ -22,26 +22,24 @@ Volume=%h/pokesim/data:/data:Z
 # Remove this line when installing the unit as root (see deploy/README.md).
 UserNS=keep-id:uid=1000,gid=1000
 
-Environment=POKESIM_HOST=0.0.0.0
-Environment=POKESIM_PORT=8000
-Environment=POKESIM_ROMS_DIR=/roms
-Environment=POKESIM_DATA_DIR=/data
-Environment=POKESIM_DEMO_GAME=true
-Environment=POKESIM_FRAME_FPS=12
-Environment=POKESIM_EMULATION_SPEED=0
-Environment=POKESIM_DEFAULT_AI_MODE=default
-Environment=POKESIM_LOG_LEVEL=INFO
+Environment=HOST=0.0.0.0
+Environment=PORT=8000
+Environment=DATA_DIR=/data
+# Every .gb/.gbc/.zip in /roms is imported into the library at startup.
+Environment=ROM_DIR=/roms
+Environment=AI_MODE=default
 
-# Endpoint defaults. Override these in a drop-in instead of editing this file,
-# e.g. ~/.config/containers/systemd/pokesim-agent.container.d/10-ai.conf
-Environment=AI_BASE_URL=http://host.docker.internal:11434/v1
-Environment=AI_MODEL=llava
+# Vision endpoint defaults. Override these in a drop-in instead of editing
+# this file, e.g.
+# ~/.config/containers/systemd/pokesim-agent.container.d/10-ai.conf
+Environment=AI_BASE_URL=
+Environment=AI_MODEL=
 Environment=AI_API_KEY=
 Environment=AI_POLL_INTERVAL=4
 Environment=AI_MAX_CONTEXT_TURNS=8
 Environment=AI_IMAGE_HISTORY=2
 Environment=AI_MAX_ACTIONS=8
-Environment=AI_MAX_FRAMES=240
+Environment=AI_MAX_FRAMES=120
 Environment=AI_TEMPERATURE=0.2
 Environment=AI_TIMEOUT=120
 

@@ -1,0 +1,1044 @@
+# Changelog
+
+## Agent fork
+
+- Add a per-adventure **AI player** selector: `default` keeps upstream PokeSim's strategic autopilot, `vision` uses an OpenAI-compatible vision model, and `manual` leaves the game to the keyboard and controller. The setting can be changed while an adventure runs.
+- Add an optional vision agent that captures the live screen and memory state, keeps a rolling multi-turn plan and memory, and queues validated button sequences on the emulator thread. It supports Generation I and II.
+- Add server-wide `AI_BASE_URL`, `AI_MODEL`, `AI_API_KEY` and tuning variables for the vision endpoint. Default and manual adventures never contact a model.
+- Import supported ROMs from the read-only `ROM_DIR` mount at startup and publish a pull-only Compose file plus a Quadlet unit with registry auto-updates.
+
+## 0.5.3
+
+- Fix Red, Blue and Yellow workers still growing after many Time Capsule trades ([#111](https://github.com/afk-sapien/PokeSim/issues/111)). Each trade with Gold, Silver or Crystal loads a fresh copy of the Gen II data, and two lookups cached their results by that copy, so every copy stayed in memory. Red held about 24 copies, about 1.8 million lists, after a day of trading. The lookups now keep their results on the copy itself, and Red's worker stays near 19,000 lists.
+
+- Fix browser sound jumping in pitch or cutting out. The page was told the speed measured over the last second, so after a short stall the catch-up burst read as 7x and the next second as 2x. The page now hears the speed setting, or 1x when playing by hand, and smooths the bursts itself. Sound cut because the speed is too fast to hear now counts as dropped audio.
+
+- Fix a Gold, Silver or Crystal adventure stuck for hours with "no route" to every goal after its cartridge reset. The title menu had read the save, so the game looked started on its last map, but no map was loaded and every tile read as a wall. A started game with no loaded map now presses through to Continue. Repeated failures of one goal now also add up toward a reload, which they did not before.
+
+- Fix Red, Blue and Yellow trades failing with "The selected Pokémon cannot be identified uniquely". The trade offered the spare the game was about to release at the PC, so the Pokémon was gone a few seconds later. That spare is no longer offered.
+
+- Fix automatic trades failing over and over when a game's party cannot make room. Each attempt picked a different boxed Pokémon and failed with "No safe unprotected reserve", or "The party has no safe reserve to deposit" in Gold, Silver and Crystal. Like a full PC, that failure now pauses automatic trades for the whole game.
+
+- Add floating image tags ([#115](https://github.com/afk-sapien/PokeSim/issues/115)). Each release moves `latest` to the newest stable release and `0.5` to the newest release of the 0.5 line, so automatic updaters can follow releases.
+
+## 0.5.2
+
+- Update Pillow to 13.0.0 for its security fixes, through Core 0.7.1, which allows it. Nothing else in Core changes.
+
+- Fix Red, Blue and Yellow workers growing to about 900 MiB over a day of play ([#111](https://github.com/afk-sapien/PokeSim/issues/111)). Every autosave rebuilt the learned map as about 300,000 small lists, twice, and each trade and reward check parsed it again, which fragmented memory faster than it was returned. The map is now saved as two flat lists of numbers, which cuts the peak during a save from about 31 MiB to 6 MiB. Older saves still load. A save written by this version starts a fresh map if it is opened by an older one.
+
+- Fix automatic trades failing over and over when one game's PC is full. The wait after repeated failures counted each Pokémon separately, and Blue offered a different Pokémon each time, so new trades kept being planned and kept failing. A repeated full-PC failure now pauses automatic trades for that whole game until it completes a trade.
+
+- Add `POKESIM_MEMORY_REPORT_MINUTES`, off by default. When set, each adventure writes a memory summary to its worker log at that interval.
+
+- Fix Gold, Silver and Crystal adventures stuck in the Route 36 National Park Gate with "no route" to every goal. The officer's corner behind the counter opens only onto the warp carpets by the National Park door, and route planning treated those carpets as walls, so a trainer who stepped into the corner after a Bug-Catching Contest found no way out, and trades failed with "No reachable Pokémon Center for this offer". Route planning now walks over warp carpets and only warps from one when walking off it the warp's way, and in the stuck save the trainer walked out and went back to training.
+
+- Fix Gold, Silver and Crystal League runs reloading the League entry save again and again at Koga. When only a level 100 Ditto was left standing, the trainer saw a battle that could never end because Transform does no damage, so it restarted the attempt before Ditto could copy the foe. A Ditto with Transform left, or one already Transformed, now plays the battle out, and in the stuck save it beat Koga. After three restarts of the same attempt without a new League win, the run is now treated as lost, so the team leaves to train before trying again.
+
+- Add **Fair wild DVs**, an optional Red, Blue and Yellow adventure setting that is off by default. The cartridge never gives a grass or cave Pokémon shiny or perfect DVs. With the setting on, each wild encounter gets fully random DVs, while trainer, cable and Transform battles keep theirs. With it off, Statistics notes the cartridge limit.
+
+- Bring the Route 12 Snorlax back in Red, Blue and Yellow. After becoming Champion and battling the original Snorlax, every 100,000 steps it blocks the road again, set by the same setting as gift and trade returns. The trainer walks to it with the Poké Flute, wakes it and battles it. A battle that ends without a catch waits for the trainer to leave Route 12 before Snorlax returns, so the road stays clear in the meantime. A missing Snorlax is a new Pokédex entry and goes before repeat work.
+
+- Fix Gold, Silver and Crystal Time Capsule trades stalling at the Pokémon Center PC until "The trainer did not reach the Cable Club before the preparation deadline". When the lead had fainted and the only other party member could not enter the Time Capsule, the game refused to deposit that last Pokémon able to battle, so the PC opened and closed for the whole preparation while the partner waited at the Cable Club. The trainer now walks to the nurse first, then deposits it at the nearest PC from there. A full party also skips a reserve whose deposit the game would refuse.
+
+- Fix the Live page totals overlapping between phone and desktop widths. From 641 to 1099 pixels the badges, registered count, areas, League wins, money and play hours were squeezed into one row, so Gen II's sixteen badges ran into the registered count and play hours were cut off. The badges now take their own row with the five readings beneath.
+
+- Fix Red, Blue and Yellow trades failing with "The PC could not withdraw for this trade: Menu did not respond". A nickname received in a cable trade carried a text command, so the PC box list stalled on that name while scrolling and never reached the Pokémon stored after it. Red offered Muk, Kabutops and others from behind such a name in Box 11, and each trade travelled to the PC only to fail. Those Pokémon are no longer offered, and a trade that picks one stops before travelling with a reason.
+
+- Fix trade failures that did not say which game held them up. When one side never reached the Cable Club, the reason now names that adventure. A Gold, Silver or Crystal trainer that missed its preparation deadline now reads as taking too long to reach the Cable Club, and a paused or manually controlled adventure is named as the reason, instead of both reading "could not finish safely".
+
+## 0.5.1
+
+- Keep counting Gold, Silver and Crystal League wins past 200. The cartridge stops recording Hall of Fame entries at 200, so a finished run kept challenging the League for a victory that never arrived, earned no rewards and raised "Stuck? N game hours without progress" every six hours. A win from Lance's Room into the Hall of Fame now counts once the cartridge stops, and each League win counts as progress.
+
+- Let a Pikachu traded into Yellow go to the PC. Only the starter, a Pikachu with the player's own trainer ID, stays in the party, as on the cartridge. A party of field-move holders with a traded Pikachu had no one to deposit, so every trade into Yellow failed with "could not safely make room in its party".
+
+## 0.5.0
+
+- Remove the generic "Stuck? No progress for a while" warning from Library cards.
+
+- Let encounter maps finish loading before abandoning a Gen II postgame hunt. An outing no longer ends immediately when a map transition briefly leaves its encounter tiles unavailable.
+
+- Train a Gen II partner to level 12 before challenging Falkner, so an underlevelled team does not repeatedly lose without earning experience. Respect scripted escape restrictions when an uncatchable shiny appears, including red Gyarados, instead of choosing Run forever.
+
+- Fix finished Gold, Silver and Crystal adventures walking the Route 29 grass forever with "Walk the grass until a trade or a return brings new collection work". A Gen II run only went back to the League when it was short of money or stock, so once every Pokémon was registered and the party reached level 100 nothing else was left. With no collection, training or clock-gated work and the Champion beaten, it now challenges the Elite Four again and records another Hall of Fame entry, then starts the next run, the way a finished Red, Blue or Yellow adventure loops the League. A League run that has started finishes before new work. Carried eggs and a clock wait such as Lapras's Friday still keep the walk.
+
+- Give finished Gold, Silver and Crystal adventures the postgame of Red, Blue and Yellow. Once the collection work runs out, the adventure rotates between four activities instead of only looping the League. It hunts better-DV copies of an owned species whose best copy has ordinary DVs, catching up to three copies per hunt and at most three hunts per species, and the boxes keep the best copy. It trains the best copy of a species ten levels at a time at Mt. Silver, skipping a species whose level 100 copy is already as strong. Each shiny-hunting outing checks up to 100 wild encounters on one grass map, running from ordinary battles. It finishes the current battle, then gives two other activities a turn before another outing. An hour of simulated gameplay, including travel, is a fallback limit when encounters are scarce. Pausing or changing playback speed does not change these limits. A stronger boxed copy stays safe even when a weaker copy of its species is in the party, and both Special stats count when comparing copies. And it challenges the Elite Four again. Better-DV hunts and training weigh most and the League least, and no activity is picked three times in a row. Pokédex, trade, breeding and clock-gated work still go first, and a wild shiny met at any time is still caught.
+
+- Show shiny Pokémon in their shiny colours in Gold, Silver and Crystal. The Live party, the PC, a Pokédex copy's popup, the Trading pages and view links now draw a shiny partner with the cartridge's own shiny palette, served from `sprites/shiny/<dex>.png`. Shiny portraits are extracted with the normal ones when an adventure starts, and drawn on first request for a library extracted before this version. A hand-installed image in an adventure's `sprites/shiny` folder wins. The community sprite pack has no shiny images, so a shiny partner shows the cartridge portrait. Pokédex species cards keep the normal colours. Red, Blue and Yellow have no shiny palettes and are unchanged.
+
+- Move to hash-pinned PokeSim Core 0.7.0 and drop PokeSim's own copies of the Gen II code Core now owns: the memory map and RAM decoder, clock, snapshot and save handling, hooks and resets, ice and Ruins puzzles, breeding, portraits, screens, Battle Power, NPC trade and prize tables, the Time Capsule rules, and the Gen I and Gen II cable drivers, as well as the Gen I sprites, save export, Pokémon Center checks, text matching and DV checks. Gameplay policies, navigation and the adventure's clock memory stay in PokeSim. A failed save export now says "No save was produced" in every game.
+
+- Move to PyBoy RS 0.1.2. A Gold, Silver or Crystal write to a clock register now sets exactly that counter, the halt bit stops the clock, and loading a save state rebuilds the clock latch from the loaded clock, so loads are deterministic. Saves and checkpoints from 0.1.1 still load. This fixes the clock of an adventure that reaches day 140, where the game takes 140 days off its clock: 0.1.1 turned that write into a clock racing ahead by minutes every frame. Adventures now remember the clock's latest reading instead of the largest one, so a restart after such a write resumes at the game's time instead of going back to the moment of the write. The wheels, the lock and the image's emulator source archive all point at the 0.1.2 release.
+
+- Keep Never trade locks when rolling back to 0.4.20 without restoring a backup. The upgrade moved each lock to the new trade key and deleted the old one, which is the only one 0.4.20 reads, so after a rollback a locked Pokémon could be traded or released as a duplicate. The old row now stays as a copy that follows every lock and unlock, and a lock set in 0.4.20 after a rollback is kept when upgrading again.
+
+- Catch shiny wild Pokémon in Gold, Silver and Crystal. A shiny wild opponent is always a catch, even when the species is registered or money and balls are low: the adventure weakens it without a knockout, uses status moves and its best balls, keeps a Master Ball as the last resort unless a roaming beast, Lugia, Ho-Oh or Crystal's Suicune is still to catch, and never runs from it or knocks it out. A shiny in the Bug-Catching Contest is kept over any prize, taken straight to the judges and counted as acquired. A transformed Ditto is judged by its own DVs, and trainer Pokémon are never targets. Shiny wild encounters and catches are now counted, so Stats shows shinies seen and acquired for Gen II and the First shiny acquired milestone can unlock. A shiny that hatches from an Egg, the Odd Egg included, and a shiny received in a PokeSim trade also count as acquired, once and only on the receiving side; no in-game trade in Gold, Silver or Crystal gives a shiny. The Gen II Pokédex marks species with a shiny acquired or held, as in Gen I, and adds a ★ Shiny seen marker for species seen shiny in the wild but not acquired. Counting starts when an adventure first runs this version.
+
+- Fix Gold, Silver and Crystal knocking out a wild shiny it could not catch. With a full PC, no balls, or only a Master Ball kept for a legendary, the adventure fought the shiny as it would any other opponent. It now runs, as Red, Blue and Yellow do, and the journal and notifications record "Shiny <species> could not be caught: no storage space", "no balls" or "only the Master Ball, kept for a legendary", once per battle at low priority. A failed escape tries again next turn. Only a trap that forbids running, such as Mean Look, leaves the turn to be fought. The Bug-Catching Contest keeps its own Park Ball rules.
+
+- Fix the party popup on the Live page missing the stats table, Stat Power with its level 100 ceiling, Battle Power and the DV rating. It drew from the Live party record, which lacked them, until the PC record arrived, and kept that record if the request was slow or failed. The Live party now carries the same fields, built by the same code as the PC, for Gen I and Gen II.
+
+- Port the TM shop and Champion shop to Gold, Silver and Crystal under **Extra store items**. After the Hall of Fame the Goldenrod 5F clerks also sell the 34 one-time TMs (₽50,000, ₽25,000 or ₽10,000 by tier, as in Red and Blue), and the 4F clerk sells a Master Ball (₽100,000) and five Rare Candies (₽25,000), each once per 1,000,000 steps, plus Elixir, Max Elixir, Leftovers and Lucky Egg. The adventure buys a TM only for a real level-100 Battle Power gain on a level 50+ partner and teaches it at once, uses Rare Candies on the partner they were bought for, gives a held item to a partner with empty hands, keeps ₽20,000 in reserve, and uses Elixirs in the League when an attacking move is out of PP. Prices above ₽65,535 are charged in full through a hook on the cartridge subtotal; the cartridge is unchanged. Stats → Items shows the Gen II walking offers. PP Up is priced but not bought yet, because the Core item shortcut does not recognise the Gen II move list.
+
+- Split each game's Trading page into a Make a trade tab and a History tab under the Auto trading switch. The tab is kept in the address as `#make` or `#history`; a Trade… link from the PC opens Make a trade, and a trade completed notification opens History.
+- Add an **Extra store items** setting for Gold, Silver and Crystal, on by default for new adventures. The Goldenrod Dept. Store 4F clerk also sells the six evolution stones for 2100 each, and the 3F clerk sells King’s Rock, Metal Coat, Dragon Scale and Up-Grade, so a spent one-time item no longer blocks a Pokédex entry in Gold or Silver. The cartridge is unchanged: the items are added to the opened BUY list in memory. An adventure buys one only for a missing, prerequisite or requested evolution that the bag, an unused one-time item, a Crystal phone trainer or a linked peer's trade cannot cover, runs the League first when it is short of money, and stands down after a purchase that does not land. With the setting off the store keeps its normal stock.
+
+- Give Gold, Silver and Crystal adventures repeatable evolution stones once the one-time stones are spent, so a missing Pokédex entry or a peer's request can still be evolved. In Crystal the adventure registers Picnicker Gina (Leaf Stone), Schoolboy Alan (Fire Stone), Lass Dana (Thunderstone) or Fisher Tully (Water Stone), waits by a Pokémon Center phone for the call, and collects the stone the same day. Every game also visits Mt. Moon Square on Monday night for the Moon Stone the Clefairy uncover, and enters the Bug-Catching Contest for a Sun Stone a peer needs. Gold and Silver phone trainers never give items, so those games still have no second Leaf, Fire, Water or Thunder Stone. A source that cannot progress, such as a full phone list or a call that never comes, stands down for a while instead of looping.
+
+- Trading page trimmed to the essentials; wishlist removed.
+
+- Make each game's Trading page one page. The Auto tab is gone: the automatic trading switch sits at the top, then Make a trade and History follow. Lock a Pokémon on the PC page instead: press it and press **Locked: never traded** in its popup. Every Pokémon can be traded automatically unless it is locked, and a locked one has a lock icon in the PC grid and the party. Locks are the old Never trade setting, so existing choices carry over. The Library loses its Trading tab and keeps Library, Notifications and Settings. `/trading` and `/trade` now redirect to the library, and a trade notification opens the first game's Trading page.
+
+- Fix Crystal adventures stuck in Battle Tower 1F with "A conversation in Battle Tower 1F made no progress" logged every two seconds. The Tower team was chosen for level 20 at levels 16 to 18, and Silver Cave training toward level 20 took two partners to 21 in one battle, so the receptionist answered "A party POKéMON tops this level." and asked for the level again, forever. A partner that outgrows the chosen level now cancels the challenge at the level question, the adventure team is restored, and that level backs off like a lost challenge. The next challenge is chosen from the partners' current levels.
+
+- Fix Red, Blue and Yellow adventures standing at a Pokémon Center PC on "Make room in storage" until the stall alert. A Pokémon received in a cable trade had a text command in its nickname, so the PC box list stopped drawing at that name and the release menu could never reach the spare chosen behind it. The same release failed every minute for hours. Spares stored after such a name are no longer chosen, and a release that fails lets the next spare go first. Releasing about once per new catch, League reward or trade is expected while every box is nearly full.
+
+- Stop Gold, Silver and Crystal adventures putting duplicate eggs ahead of training. Gold kept 28 Sneasel eggs in the PC from an old breeding loop and fetched them one at a time, so Crobat waited in the PC for days of game time. A trip to the PC now brings only eggs that would add something: a species not yet registered, or a copy another adventure asks for by cable. Other eggs stay safe in the PC, and one already in the party may go back to make room for the next Pokémon in training.
+
+- Stop Gold, Silver and Crystal adventures reporting "Stuck? 6 game hours without progress" while walking eggs from the PC to hatching. A level 100 party earns no experience and a hatchling of a registered species adds nothing new, so a box of slow eggs such as Sneasel tripped the stall alert and asked for help every few eggs. Every egg cycle walked off and every hatching now counts as progress, once each, so a reload back to an older save does not.
+
+- Keep the original Bench Instrument look: the putty panel, near-black dark theme, rust and orange accent, uppercase pixel-face labels, tabs and keys, the plain journal list and full open party bays. A short-lived Game Boy Color restyle (grey shell, slate bezel, berry keys, bundled Inter) is gone, and sentences use the system font again, so the app bundles only its own pixel face. Newer parts, such as the Trading tabs and the lock toggle in the PC popup, use the same look. The top bar ends in one clean line that the tabs sit on. Separator dots and arrow marks on links are gone (slots read "Box 1, slot 2" and versions read "v0.5.0 (abc1234)").
+
+- Ask before rewinding the live game. The rewind key on a journal entry now opens a question that names the play time it goes back to and how much play would be lost, with Keep playing as the default. Nothing is sent until Rewind and lose progress is chosen.
+
+- Give each library card one main key and a settings key. Stop, Details, Download save, Archive and Delete now sit in a More menu that works from the keyboard (arrow keys move, Esc closes). The status chip says Trading, Manual control or Paused instead of Running when the game is held, and every card key and backup key names its adventure or date for screen readers.
+
+- Fit every page on a 390 pixel phone without sideways scrolling. The adventure tabs scroll inside their own strip and keep full names, the Stats figures no longer overlap, and the toast and Pokédex detail respect the notch and home bar. Popups no longer scroll the page behind them.
+
+- Show the Pokémon on journal entries for catches, gifts, hatches, evolutions and level-ups, using its sprite instead of a cutscene screenshot. Journal and live page labels are plain words ("Caught", "Party", "Plan", "Now", "Next"), and the live page no longer repeats the plan title under it.
+
+- Fix the Stats page saying shinies are "Not tracked" next to a shiny in the PC. When arrivals were not counted it now shows the shinies held, with a note saying why.
+
+- Keep keyboard focus clear of the sticky header, label the Pokédex move list for keyboard and screen reader users, show text while the fonts load, and lay out Pokédex and PC sprites in one pass.
+
+- Fix Gold, Silver and Crystal adventures stalling on "Train … toward level 100 in the lead" with the Pokémon in training never leaving the back of the party. A roaming-beast search that was put off for later still kept its sleeper in the lead, so the trainee joined no battles, earned nothing, and the adventure reloaded every half hour. The training walk now leads with the trainee, and the sleeper leads again when the search resumes.
+
+- Fix a Red, Blue or Yellow Pokémon being sent to Gold, Silver or Crystal every few minutes when the Time Capsule always refuses it. A Pokémon whose saved types do not match its species (the game says it "appears to be abnormal" and cancels the trade) is now left out of Time Capsule trades with that reason, a session stops as soon as the game shows the message instead of pressing on for half a minute, and automatic trading leaves out any Pokémon whose last two trades failed the same way for 30 minutes, doubling up to a day.
+
+- Keep training Gold, Silver and Crystal Pokémon after the Exp. Share is gone. Each cartridge has only one, and Crystal and Silver lost theirs to earlier automatic trades, so Silver spent almost all its time walking the grass with nothing to do. The Pokémon in training now leads the party and switches out on the first turn of a battle it would lose, which still shares the experience with it.
+
+- Open any Pokémon listed under "With you right now" on a Pokédex entry. Each one is now a key that shows its full record in the same popup the PC uses, on top of the Pokédex, and Esc or Close returns to the entry where it was. The popup has a Show in PC key that opens its box, or the party, with the Pokémon marked and its popup open. The PC also opens one slot from its address, such as `/pc?box=12&slot=4`.
+
+- Make Gold, Silver and Crystal adventures wait for the cartridge clock less. Breeding, hatching and evolving now go ahead of a weekday or time-of-day wait, and labels name what is waited for ("Bring eggs from storage to hatch while Lapras waits for Friday"). A levelling plan left without the Exp. Share no longer keeps stored eggs from hatching, stone and trade evolutions run without it, breeding raises its Day Care money first, and the Exp. Share holder is never released or traded.
+
+- Redesign the Pokémon detail popup on the PC and Trading pages. A head with the portrait, name, one line of facts and one row of same-height stamps (Healthy is no longer stamped), then one strip of equal cells for HP, XP, Stat Power and Battle Power, then Moves and Stats as two cards of equal height, stacked on a phone. Each move reads as two lines, name and type, then kind, power, accuracy and PP, with blank slots up to four, so a phone no longer shows a broken table header. The pixel face is kept for the name and the keys, numbers use tabular mono, and the footer keys stay in one row on a phone with shorter labels.
+
+- Fix Gold, Silver and Crystal adventures standing at a Pokémon Center PC for hours on "Bring the breeding partner from storage". With a full party of field move holders and eggs brought out to hatch, the PC had nothing it could take, so the errand pressed B in front of it forever. The party now walks until an egg hatches and then swaps the new Pokémon for the parent. Fetching the Day Care man's partner while an egg waits also collects the egg first, since he stands outside on Route 34 until then.
+
+- Run the Gold, Silver and Crystal cartridge clock on game time instead of wall time, and show the in-game day, time and period (such as TUE 08:14 MORNING) beside the place name on Live. The clock moves with emulated frames, about 5.16 million frames to an in-game day, so at Max a wait for a weekday or night passes in under an hour instead of a real day. It never runs backward across restarts, crashes, save reloads, trades and backups, each side of a trade keeps its own clock, and existing saves start from their current reading. The state API reports it as `clock` with `weekday`, `hour`, `minute` and `period`.
+
+- Queue hand-built trades with a game that is busy trading instead of refusing them. Under Trade with, a busy game stays pickable and shows its Pokémon, from the last known PC when needed, with "Busy with a trade. Your trade will wait in line." Queued trades run in order once the game is free, and a waiting hand-built trade goes before new automatic trades for its two adventures. When its turn comes both Pokémon are checked again, and a trade whose Pokémon has gone ends with a reason such as "Cancelled: Pikachu is no longer in Red’s party or boxes" without touching either save. A waiting trade has a Cancel trade key on its adventure's Trading page, through `POST /api/v1/interactions/trade-builder/<id>/cancel`. A trade that has started can no longer be cancelled.
+
+- Lay out every Settings panel in one full-width column. Nicknames, Backups, Import and Close PokeSim no longer sit two to a row; each shows its explanation on the left and its keys on the right, stacked on a phone, and every Settings key is the same height and size.
+
+- Draw the first 40 cards of the PC's All Pokémon view and the Pokédex at once and the rest over the next frames, so a full PC of about 280 cards no longer holds up the first paint.
+
+- Show grey placeholder cards on the PC and Pokédex while their first data loads, instead of a blank area under the page frame.
+
+- Show the PC and Pokédex as last seen the moment they reload, then swap in fresh data as soon as it arrives. Each adventure keeps the last PC and Pokédex it drew in the browser's IndexedDB, the connection label reads Updating… until the server answers, and the PC's Trade… key waits for fresh data. A browser that blocks or fills its storage simply waits as before.
+
+- Keep Pokémon portraits in the browser for a year instead of downloading about 280 of them again on every PC or Pokédex reload. Each adventure's pages stamp portrait addresses with a fingerprint of the artwork it shows, which changes when the community pack is installed or restored, cartridge portraits are extracted, or a hand-installed portrait is added or replaced, so new artwork still shows at once.
+
+- Speed up the PC, Pokédex and Trading pages. Their live status is written with the standard JSON encoder instead of FastAPI's per-value one, which took about ten times as long on a full PC, and the PC and Trading pages no longer build the Gen II Pokédex plan they never show. The species reference behind the Pokédex is built once per adventure and carries an ETag, so a browser that already has it gets a 304 instead of 650 KB of JSON. A Gen II adventure answers it without first reading the game's status.
+
+- Move Copy view link from under the live game controls into the top bar, as a small link key beside the connection status that shows "Copied" for a moment. The controls stay one row. The top bar now gives the tabs their own row below 1280 pixels instead of clipping them. Tidy the PC detail popup's spacing: type and status tags share one row, the head lines up with the body, every type fits the moves table, the stats table no longer wraps on a phone, and the Stats guide, Pokédex and Trade… keys share one footer row at one size. Smaller fixes: the trade builder's swap chip is level with the slots, recent trades on the library Trading page no longer break names mid-word, Settings sections have even gaps, cartridge details line up, the Hide item icons key keeps its own width, and footnotes on the Stats page no longer touch the panel above.
+
+- Fix Crystal adventures reloading every few minutes on Route 22 with "Stuck? The adventure had to reload twice". Halfway over a ledge the game reports the player on the blocked tile it hops across, so a Tower trip from Kanto saw no walking route to Olivine for that moment, flew back to Viridian City, walked to the same ledge and flew again until 30 game minutes passed without progress. Fly is no longer chosen during a ledge hop. A Tower trip also counts the PC slots its swaps need before it sets off: a party of six with one free slot used to travel to Olivine, fill the boxes, stand down and start the same trip again after the wait. It now keeps to its other activities until the boxes have room.
+
+- Fix Gold, Silver and Crystal adventures filling their PC with eggs that never hatch. An egg only hatches in the party, but a full party sent its lowest level member to the PC, which was the new egg, and Day Care breeding only counted eggs in the party, so it collected another one. A Gold adventure stored 54 Sneasel eggs this way. Breeding now skips any line with an unhatched egg in the party or the PC, PC errands keep eggs in the party, and once the party carries none the adventure brings up to three stored eggs into the party to hatch on the walks of its other errands. One egg at a time takes the place of a spare partner, and a trainee or Exp. Share swap that would otherwise store the only holder of a field move waits while training walks the egg to hatching.
+
+- Simplify trading to two kinds: automatic trades, which start on their own, and trades you build by hand between your own adventures. Trade offers and manual Cable Club sessions are switched off for now, and so is the Ask me first approval from the release candidates. The Trading page has Trade, Auto and History tabs, and Trade queues the trade at once and opens History. A view-only adventure is a greyed-out choice under Trade with, with the reason. Waiting and running trades show under Current exchange on both adventures' pages. The trade builder's API is `/api/v1/interactions/trade-builder`. The `/api/v1/interactions/trade-offers` and `/api/v1/interactions/cable-sessions` routes, the `/games/<id>/cable` page and the `/api/v1/interactions/trade-requests` routes now return 404. Offers and sessions saved by an earlier build stay in the database and are ignored, as are a stored Ask me first setting and waiting suggestions, and a session left running is still rolled back at startup.
+
+- Rename the trade settings to Can trade, Prefer to trade and Never trade, each with a one-line hint, and say everywhere that shiny and perfect DV Pokémon are always protected. Stored values are unchanged.
+
+- Redesign the Trade tab as a trade builder. Pick a game under Trade with, then fill the You send and You get slots. Each slot opens a picker with the PC's search, filters and sort, which scrolls inside itself, closes with Escape and fills a phone screen. A picked Pokémon becomes a compact card that opens its details. Trade works only once both slots are filled and the pair is allowed, and the reason shows when it is not, such as a twin or a protected Pokémon.
+
+- Fix hand-picked and automatic trades failing with "An adventure needs a free PC slot to prepare its Pokémon for this trade" when a Gen II game held six in the party and 280 in the PC. Preparation gave up once every box was full, and the release rules kept every duplicate holding an item, which in Gold left nothing to let go. Preparation now releases one spare duplicate at the PC through the ordinary menus, weakest first and only when nothing safer is spare, and logs "Released <name> (<species> Lv N) to make room for a trade". It never releases an egg, a shiny, perfect or rare-DV Pokémon, one set to Never trade, one hand-picked for a pending trade, a wished species or the last copy of a species. A game with a releasable spare is no longer left out of automatic trades or greyed out for hand-picked ones. When nothing is safe to release, the failure names the game, such as "Chaotic Escape (Gold) has a full PC and no spare duplicate it can safely release".
+
+- Tidy the PC detail popup so it fits one desktop screen. It now has two columns, with HP, XP, Stat Power, Battle Power and moves on the left and the full stats on the right. Stat Power reads as now against its level 100 ceiling, such as "312 / 480", or one number marked (max). Moves line up as a compact table of type, kind, power, accuracy and PP. Original trainer, Elite Four wins, friendship, catch data and the trade block are gone, and the trade setting and Pokérus are small tags under the name. The Trading page shows the same popup. The Boxes and All Pokémon switch moves from the PC's stats row into its filter bar, where it no longer wraps on a phone.
+
+- Fix Crystal adventures stuck inside with "no route to Travel to Olivine before preparing the Tower team from Cherrygrove Pokémon Center 1F" logged about 45 times a minute. Fly only works on town and route maps, so inside a Pokémon Center, a cave or a gate with Route 36 blocked again, the adventure saw neither a walking route nor Fly and gave up over and over. It now walks out to the nearest town or route it can reach and flies from there. A Tower trip also no longer starts, or carries on to Olivine, while six Pokémon are in the party and every PC box is full with nothing spare to release, since the team could not be put together there. The adventure keeps to its other activities and tries again later.
+
+- Fix Crystal adventures stuck on Route 46 with "no route to Travel to Olivine before preparing the Tower team" logged about once a second. A returned Sudowoodo stood on Route 36 again, which cuts every walking route from Route 29 to Ecruteak and Olivine, and Fly was only considered as a shortcut for a route that could be walked, so the adventure wandered between Route 46 and Route 29 and gave up over and over. When no walking route exists, the adventure now flies to a visited town it can walk on from, here Olivine.
+
+- Fix automatic trades failing over and over with "An adventure needs a free PC slot to prepare its Pokémon for this trade". A Gold and a Silver adventure each held six Pokémon in the party and 280 in the PC with nothing they could release, so preparation could not deposit anyone to withdraw the boxed offer. They were still proposed, and over 100 trades with Crystal, Yellow and Blue failed this way. An adventure whose party and every PC box are full, with no spare to release, now offers nothing for automatic trades until it has room, and its boxed Pokémon are greyed out for hand-picked trades with the reason shown. Party Pokémon can still be hand-picked. The banner now names the game that is short of space, such as "Chaotic Escape (Gold) needs a free PC slot", and says that game is left out of automatic trades until its PC has room.
+
+- Rebuild the Trading page around the PC's Pokémon cards. The Trade tab now picks your Pokémon, then the other adventure, then their Pokémon from grids with the PC's search, DV rating, sort and order controls, plus a trade setting filter. A Pokémon the cable cannot take stays in the grid greyed out, and hovering or tapping it shows why. Tapping a card opens the PC's detail popup with a button to choose it, and a chosen Pokémon folds into one card with a Change button. Each card carries a stamp for its trade setting. The Auto tab shows the same cards and changes a setting from the detail popup. History uses the same plates, type stamps and status lamps. The old `/trading` page shares the same cards and filters. The PC page and the Trading page draw their cards from one shared script and stylesheet, and both fit a 390 pixel phone in light and dark themes.
+
+- Fix Pokémon that could not be traded with "Another Pokémon has the same trainer and stats, so this one cannot be picked out safely". Neither generation stores a unique ID per Pokémon, and trades told Pokémon apart by trainer ID and DVs alone, so emulator reloads and Day Care breeding left different species with the same trainer and DVs blocked, such as 31 Pokémon in one Red adventure. A trade key now adds the Pokémon's evolution family, named by its lowest Pokédex number across both generations, so different species trade normally and a key stays the same through evolution and the Time Capsule. Only two Pokémon of the same family with the same trainer and DVs are still blocked, with the reason "Another Rattata from the same trainer has identical stats, so the game can't tell them apart". Trade settings saved under an old key move to the new one when exactly one Pokémon matches, and otherwise stay unassigned. Trades in progress with an old key still find their Pokémon by the same rule.
+
+- Make a trade on the library page now links to each adventure's Trade tab, and the separate trade picker at `/trade` is retired. Old links to `/trade` go to the Trading page, and the admin API behind the picker is removed.
+
+- Put everything about trading on the Trading page. Each adventure's Trading page now has Trade, Auto and History tabs. Trade picks one of this adventure's Pokémon, another adventure and the Pokémon you want back, with anything the cable cannot take greyed out and the reason shown, and Trade now starts it at once. History shows hand-picked and automatic trades together. A changed trade setting is confirmed under its own row instead of in a toast over the list. The PC no longer has lock badges or an offer banner. It shows each Pokémon's trade setting read only and a Trade… link that opens the Trade tab with that Pokémon chosen.
+
+- Replace locks and trade offers for automatic trading with one trade setting per Pokémon: Auto decides, Trade first or Keep. Locked and withdrawn Pokémon become Keep and offered ones become Trade first, once, and the stored values stay readable by older releases. The Auto tab adds an on or off switch per adventure and a wish list of species to trade for, which ranks ahead of everything else. Automatic trading never moves a shiny, an active party member or a Pokémon already in a hand-picked trade or open offer, and keeps the last copy of a species unless the trade evolves it or fills a new Pokédex entry. Hand-picked trades ignore all of these and still go before automatic ones.
+
+- Remove the bundled authenticated HTTPS proxy (`compose.proxy.yaml` and `deploy/proxy`). PokeSim has no built-in login, so for remote access put it behind your own reverse proxy with a login, Tailscale, or Cloudflare Access. If you use the bundled proxy, keep your existing compose files or switch to one of these before upgrading.
+
+- Fix Gold, Silver and Crystal adventures reloading in the middle of Day Care breeding. An egg keeps its species, level and experience when it hatches, so walking eggs on Goldenrod's nursery stretch, or walking while a poorly matched pair took a long time to make an egg, changed nothing the watchdog counted. After 30 game minutes it logged "no progress for 30.0 game minutes" and reloaded an older save, throwing away the eggs hatched since, and the run went round between "Retrieve the Day Care partner" and "Walk with the eggs and the Day Care partners". Each egg cycle, each hatch and each step while a compatible pair waits for its egg now count as progress. All three end once the egg is made or hatched, so a walk that never gets there is still caught.
+
+- Fix Gold, Silver and Crystal adventures freezing on the Pokémon Center 2F stairs after a cancelled trade preparation. A cancel could leave the player standing on the stairs, and standing there does not take them, so "Return downstairs after the Cable Club" pressed A until the screen watchdog warned "the screen has not changed for 1800 frames". The adventure now steps off the stairs and walks back onto them, which takes it downstairs.
+
+- Fix Gold, Silver and Crystal adventures freezing at a Pokémon Center PC after a cancelled trade preparation. A preparation that began during a wild battle let the bot pick a move, and that move task outlived the battle. When the preparation was cancelled with the PC open, the move task took the PC text for battle text and waited, which also kept the bot from closing the PC, so the screen watchdog warned "the screen has not changed for 1800 frames" and pressed B to get out. Preparation now drops a battle task as soon as the battle is over.
+
+- Fix Crystal adventures stuck at the Olivine Pokémon Center before a Battle Tower challenge. The Tower leads with its strongest partner, and when that partner was more than five levels below another one the general rule that puts the highest level first swapped it back, so the party was reordered back and forth between "Lead with the strongest Tower partner" and "Enter the Battle Tower challenge" until the run reported "no progress for 11.0 game hours". The level rule now leaves a prepared Tower team's lead alone, so the challenge is entered, and a challenge that falls short backs off as before.
+
+- Fix Gold, Silver and Crystal adventures flagged as stalled while training. Progress counted only a new high of the party's total experience, so after a level 100 trainee was swapped for a fresh one, hours of training never counted and the run raised "no progress for 8.2 game hours" and asked for help. Experience now counts per Pokémon, so any trainee gaining experience is progress.
+
+- Fix Gold, Silver and Crystal adventures freezing in front of a Pokémon Center PC with "BILL's PC accessed." on screen. With no menu task running, the bot pressed down to reach TURN OFF, but the message holds the cursor until it is dismissed, so nothing moved, the status read "opening" with no objective and every later autosave was taken in the same screen, so 12 reloads landed back in it. A message over the PC list is now dismissed with B before the list is navigated, the status reads "Close the PC", no autosave is taken while backing out of a screen no plan owns, and a reload prefers a save taken outside any menu.
+
+- Stand down Gold, Silver and Crystal objectives that cannot progress instead of reloading into them. Battle Tower team assembly matches members copy for copy, withdraws before depositing, releases a spare when every box is full and stands down when a partner is gone. A refused rod, Headbutt or Rock Smash drops the hunt target. Training releases a spare or stands down when storage is full. A reload carries the stalled objective over into the restored run, so it does not walk back into the same trouble.
+
+- Fix Gold, Silver and Crystal adventures stalling at a Pokémon Center PC once all 14 boxes are full. "Make room for Sudowoodo" or "Make room for the legendary encounter" walked to a PC with nowhere to put anything, then reloaded 12 times and stopped. When fewer than 5 box slots are free, the adventure now releases a spare duplicate at the PC, the most numerous species and its weakest copy first. Each species, and each Unown letter, keeps its best copy or as many as a plan needs. Party members, eggs, shiny, perfect and rare finds, Pokémon holding an item, trained partners, breeding parents, assembled teams and offered or locked trade partners are never released. If nothing can be spared, catch errands stand down instead of looping.
+
+- Fix Gold, Silver and Crystal adventures reloading while they wait for a weekday, such as the Bug-Catching Contest. Standing still on purpose counted as stuck, so the adventure reloaded older saves, logged "stuck for 0s" and ended flagged as stalled. The wait now shows as Waiting and is never reloaded. Reloads now pick the save by game frame instead of file time, the log gives the stuck time in game minutes, and "reloads did not help" is logged once. Collection planning counts held Pokémon once per step instead of once per encounter, which cut each decision from about 146 ms to 11 ms with full boxes.
+
+- Keep Gold, Silver and Crystal adventures busy while they wait for the cartridge clock. When the only objective left was a weekday or time-of-day event, such as the Bug-Catching Contest, the adventure stood on one tile of Route 29 for real hours and the screen watchdog warned that nothing had changed. It now walks the Route 29 grass and battles wild Pokémon, shown as "Train in the grass while waiting for …", heals when it needs to and goes to the event as soon as its window opens. A patrol that keeps moving is never reloaded for lack of progress, but one that stops moving is still treated as stuck. With six Pokémon in the party and every box full with nothing to release, training now uses only the party instead of walking to the PC for a boxed trainee or Exp. Share it cannot take out. A Battle Tower level that ends a challenge short of seven wins now rests before it is tried again, twice as long after each further loss, and other levels with a team are tried meanwhile. This stops the adventure from repeating a losing challenge as filler forever.
+
+- Fix gaps in the PC detail popup and Pokédex. Red, Blue and Yellow boxed Pokémon now show their HP bar, status and move PP. Gold, Silver and Crystal Pokémon now always show their trade state, including those kept back and those listed while trading is paused. The Gold, Silver and Crystal Pokédex no longer flashes "/151" before the total loads. Evolution text names held items ("Trade holding Metal Coat"), and place names keep their apostrophes ("Diglett's Cave").
+
+- Include the optional navigation acceleration in the Docker image, so Red, Blue and Yellow route searches are compiled on the server. The moves are the same as before. Repeated searches are faster and each adventure uses about 115 MB more memory. Set `POKESIM_NAVIGATION_BACKEND=python` to turn it off.
+
+- Make the Victory Road and Seafoam boulder planner reuse its earlier walks after each push instead of searching every square again. The pushes are unchanged, and a search after a push takes 2 to 7 ms instead of up to 100 ms.
+
+- Keep gift and static Pokémon coming in Gold, Silver and Crystal adventures through the Day Care. Families with no wild source in the cartridge, such as Bill's Eevee and the Eeveelutions, Togepi, Kiyo's Tyrogue and the Hitmons, Sudowoodo, Snorlax, Lapras and Pokémon that arrived by cable, now breed another copy whenever a linked adventure asks for any stage of them, and the copy is raised into Espeon, Umbreon or the requested Hitmon. The last Ditto and the last member of such a family are no longer offered for trade, so a parent always stays home, and a Ditto is caught again if none is held, even with a full Pokédex. Spare copies wait until the boxes have room. An Eevee one level from Espeon or Umbreon at the wrong time of day gives up its Exp. Share until the clock suits, and friendship estimates follow the cartridge's +5, +3 and +2 level up gains.
+
+- Fix Gold, Silver and Crystal post-game adventures flipping between League funding and "Collect the Moon Stone in Tohjo Falls" after every Hall of Fame entry. When a Game Corner prize partner needs more money, the League run now starts in the same decision instead of showing one later goal first.
+
+- Fix Red, Blue and Yellow adventures walking into the closed doors of the Cinnabar Gym. The map file draws every door open and the game shuts each one until its quiz trainer is beaten, so the route planner now treats a locked door as a wall and the Volcano goal faces the trainer of the first locked door before Blaine.
+
+- Fix a Yellow Cable Club or Time Capsule trade offering the first Pokémon in the party instead of the agreed one. Yellow draws the trade menu quickly enough to take a held A as a choice, so no button is pressed until the menu cursor appears. Verification had already refused the wrong exchange, so no adventure kept it.
+
+- Fix Gold, Silver and Crystal adventures stalling in a Poké Mart. After a purchase the shop menu task ended while the clerk's box was still up, so the bot pressed A through the clerk's menu again and again, ending with "You don't have enough money." and reloads that landed back in the loop. The buy task now keeps pressing B until the shop screen has been gone for several frames, never chooses or quantities an item the money cannot cover, and a conversation in which nothing changes for 80 decisions drops the shopping errand, backs out with B and is then reported as a failure.
+
+- Fix Gold, Silver and Crystal adventures standing still beside a person who blocks the tile they chose, such as Amphy at the top of the Olivine Lighthouse. A blocked tile is no longer scored as already reached, the next open side is used, and an objective that stays unreachable is reported as stuck. `tools/play_gen2.py` no longer asks the emulator to run zero frames.
+
+## 0.5.0
+
+- Fix Gold, Silver and Crystal adventures stalling at a Pokémon Center PC after a trade sent away their only Waterfall, Whirlpool or Surf partner. With six Pokémon in the party, all 14 boxes full and nothing that could be released, "Prepare a place for a field move partner" tried to deposit a party member into a full box again and again until the run was flagged as stalled with "Manage Pokémon storage". The partner errand now waits until storage has room, and the adventure carries on with its other objectives. The watchdog also no longer picks a save from before a completed trade or custom reward, which it is not allowed to load: it spent every other reload on the refused save, swung between it and the trade checkpoint and gave up after 12 reloads. When every save predates the trade it keeps playing instead of power-cycling.
+- Fix Gold, Silver and Crystal adventures reloading while they train in the Route 29 grass waiting for the cartridge clock. A reload rewinds the game frame counter, but the watchdog kept waiting for the old frame before it checked anything again, so after one reload the wait was never seen. The status read "Making progress" instead of "Waiting", and when the checks resumed in the middle of a wild battle the adventure logged "no progress for 30.0 game minutes" and reloaded again, round and round. The checks now restart from the restored frame. The wait also names the next contest day, such as "waiting for Thursday" after Tuesday's Bug-Catching Contest, instead of "tomorrow".
+- Send each page only what it draws. The live page's state leaves out the boxed Pokémon (337 KB to 13 KB on a full Crystal save, `?storage=1` adds them back), the trading page's offers carry only names, places and trade controls (481 KB to 114 KB), and the PC and Pokédex ask for their own view of `/api/pokedex/status` (709 KB to 394 KB and 354 KB). The supervisor and backups read the new `/api/summary` (about 1 KB) in place of the full state every few seconds. `/api/pokedex/status` without a view is unchanged for the trade broker and tools.
+- Fix every page of a library hanging for up to a minute while an adventure's trading page was open. The page asks for its trade status every 5 seconds, and the library built that status on the thread that serves all pages, reading the whole Gen II game data file again for every Gen II Pokémon it showed. The status is now built off that thread, Gen II species data is read once, trade views build only the rows they return, and the trade history comes from one query. With 300 Gen II trades an adventure's trade status drops from about 10 seconds to 0.2 seconds, and the library's trade overview from about 110 seconds to under 0.1 seconds.
+- Turn on the GS Ball event by default for new Crystal adventures, as the Mew event already is, so a new Crystal adventure goes for Celebi after becoming Champion. Existing adventures keep their setting, and it can still be turned off in Adventure settings.
+- Add a Trade page for trades you choose yourself. Open it from Cable Club trading with Make a trade, pick an adventure and any Pokémon in its party or PC on each side, and press Trade. Locks, offers, party protection and the last-copy rule do not apply. Only limits the cable cannot get past stop a pair, each with its reason: eggs, Pokémon that cannot be told apart, the only Gen II party member that can battle, and Time Capsule limits such as species past 151, Gen II moves or Mail. Chosen trades go before automatic ones, wait in line when the Cable Club is busy, show each step from travelling to the Cable Club to the saved trade, and can be cancelled until the trade commits. The API is under `/api/v1/interactions/manual-trades`.
+- Add view links. **Copy view link** on an adventure's live page copies `/view/<adventure id>/`, which shows the same pages with every control hidden: the screen, team, journal, progress and statistics. The server treats each request under `/view/` as view-only, whatever the adventure's settings: only `GET` and `HEAD` are allowed, every other method returns 403, and the save state list and save export are refused. `VIEWER_ONLY` still makes a whole instance view-only. To share an adventure publicly, expose only `/view/*` through your reverse proxy. The new [authentication guide](docs/authentication.md) has Authelia rules for public view links and for logged-in watchers, and a Traefik example.
+- Add Pokémon Yellow adventures. A Yellow ROM is recognised in the Library, plays from a new game with Pikachu as the starter through the Elite Four, and trades with Red and Blue over the Cable Club and with Gold, Silver and Crystal through the Time Capsule. Yellow uses its own game data and story events, such as Jessie and James and the gift Bulbasaur, Charmander and Squirtle, and runs on the Rust backend. A 0.4.x release cannot open a Yellow adventure.
+- Add a Game cartridges shelf in Settings with one slot each for Red, Blue, Yellow, Gold, Silver and Crystal. Each slot shows whether its cartridge is installed, with a short hash, size and date, and takes Upload, Replace or a dropped file. PokeSim identifies every upload by its hash and files it in the right slot, says so when it was dropped on the wrong one, and refuses other files in plain words that name the supported games. Remove asks first and refuses while an adventure uses the cartridge. New adventure now picks the game from installed cartridges, greys out missing ones with an Add cartridge link, preselects a lone cartridge, and points to Settings when none is installed. The upload and Custom ROM choices are gone from the dialog. `POST /api/v1/assets/rom` keeps working, and `GET`, `POST` and `DELETE /api/v1/cartridges` are new.
+- Make the optional community portrait pack cover every supported game. One click in Settings → Pokémon artwork now downloads the pinned PokéAPI artwork for Red/Blue and Yellow (Pokémon 1 to 151) and Gold, Silver and Crystal (1 to 251), 1,055 images, with progress, four downloads at a time, a size limit per image and for the pack, and finished images kept in the data folder so a retry only fetches what is missing. Each adventure shows the set for its own version, and Gold, Silver and Crystal adventures now use the pack too. Without the pack, portraits still come from the owner's ROM, and an image placed in an adventure's own `sprites` folder still wins over the pack. A Red/Blue pack installed by an earlier release keeps working and upgrades without downloading its images again.
+- Fix Gold, Silver and Crystal adventures looping at the Blackthorn Gym boulder puzzle. A boulder push or the Strength question leaves the player in place, which was recorded as a wall on the tile the player must stand on next, and a pushed boulder left a duplicate object behind. Neither is blocked now. Repeated reloads without new progress now count across reloads and report the adventure as stalled with a help request after 3, and reloading stops after 12.
+- Fix Gold, Silver and Crystal adventures showing no portraits for Pokémon 152 to 251. The adventure sprite route only allowed the first 151.
+- Fix a stopped or failed adventure opening what looked like a second, broken Library. Its page now says Stopped, Failed or Starting, gives the reason in words (a lost connection reads "Couldn't download the Pokémon Silver game data (no network). Retry."), offers a large Start or Retry key, and links to Cable Club trading and back to the Library. Library cards for such adventures show the state, the same reason and a one-click Start or Retry instead of a "View adventure" link back to the page. Gen II and Gen I data downloads now retry brief network failures with backoff, a failed download is retried again after 30 seconds, 2 minutes and 5 minutes, and the Retry key resets that. Gen II data is still generated on first start rather than baked into the image, and the self-hosting guide now states the network it needs.
+- Fix Gold, Silver and Crystal adventures being restarted about every 65 seconds and ending as failed. The supervisor asked Generation II workers, which have no screen palette, to apply one, and counted the refusal as a failed health check. Optional settings now never decide whether a worker lives, a refusal is reported on the setting, workers that report no palette are left alone, and the Library hides the palette choice for Generation II games. Opening a Generation II adventure on 0.4.x still fails with "Unknown settings: celebi_event" (documented in the operations guide), since that release cannot be changed.
+- Remove the automatic pause for a shiny that cannot be caught (added in 0.4.18). Balls cannot be bought and storage cannot be freed during a battle, so the pause only looked like a stall. Keep at least 10 balls in stock before heading out, on top of the existing free-storage reserve, so a shiny stays catchable. If one still cannot be caught, the player runs as it would from any other uncatchable encounter, and the journal and notifications record "Shiny <species> could not be caught: no balls" or "no storage space". The notification follows the "Stuck or needs attention" setting. Shiny release and trade protection, Take Control, and the Transform check are unchanged.
+- Run every adventure on PyBoy RS, a Rust port of PyBoy 2.7.0, through PokeSim Core 0.2. PyBoy is no longer a dependency, and installation needs no Rust toolchain.
+- Add Gold, Silver and Crystal adventures with Gen II Cable Club trading, the Time Capsule with Red and Blue, portable save export and cartridge real-time clocks. They run on the Rust backend only.
+- Keep the 0.4.x checkpoint tag on Gen I checkpoints so a 0.5.0 library rolls back to 0.4.x. Gen II adventures and locked-clock checkpoints cannot be opened by 0.4.x.
+- Report both Core and PokeSim capability errors as HTTP 501 with the real message instead of the busy response.
+- Read the wild Pokémon's original DVs for shiny protection after Transform through Core's decoder.
+- Require the NO THANKS entry before reading a list as the Game Corner prize menu, so other lists are not mistaken for it.
+- Fix live sound stutter over a jittery connection. The page now keeps an adaptive lead of 0.4 seconds that grows to 1.5 seconds after dropouts and shrinks slowly, trims drift by at most 2%, and skips forward with a short fade instead of clearing. The server keeps about 2 seconds of audio and serves it without truncation. Take Control uses a lead of about 0.1 seconds. Playback speeds snap to fixed rates, and sound is off above 4.5x. Short network failures are retried for 6 seconds. The new `tools/audio_jitter_harness.py` measures gaps in Chromium.
+- Let a library that only holds Gen II adventures start a worker. Preparing Gen II data also prepares the shared Gen I tables, and a missing set is reported in words.
+- Refuse to rewind past a trade or a custom reward from the load-state command as well as the rewind list, and return command errors to the caller instead of ending the adventure.
+- Stop the Gen II policy crashing on empty choices when it plans a Pokémon Center, a fishing spot or a field move partner.
+- Download a Gen II save as a `.zip` holding the `.sav` and its `.rtc` clock file, because a save without its clock is read as having lost the time. Gen I stays a single `.sav`.
+- Keep the live audio ring for the full buffer so a stall under two seconds resumes without a gap, and have the page resync when the server reports missed frames.
+- Show a short cause and the log path when a worker is not ready in time, in place of forty log lines.
+- Show what idle Gen II collection is waiting for, such as Tuesday for the Bug-Catching Contest or night for a time-gated encounter. The cartridge clock follows wall time.
+- Remove unreachable Core clock probes. An older Core still gets a clear capability error, and the package's capability error now shares the backend's 501 handling.
+- Require every job of the CI and Python install workflows by exact name in the release gate, including the browser and native test shards and all four Windows shards. The old prefix matching let `container-proxy` stand in for `container` and `macos-15-intel` for `macos-15`.
+- Make the release validate job and gate fail while any temporary pin remains, check the `#sha256=` fragments, the Dockerfile source checksum and the published emulator assets against `uv.lock`, and add `tools/finalize_release_pins.py` to rewrite the pins from the final release assets.
+- Stop `pokesim-core` from being requested on platforms without a pyboy-rs wheel (Windows ARM64, 32-bit ARM, FreeBSD, musl), so pip never looks those names up on PyPI. The installers and the application now say plainly that the platform is unsupported.
+- Derive the bundled pyboy-rs source archive check from `uv.lock` instead of a hard-coded file name, and fail when the archive's own metadata names another version.
+- Fix Gen II hangs caused by nicknames that look like menu words. A Pokémon named CANCEL, PROTOTYPE (contains TYPE) or MOSQUITO (contains QUIT) made the bot read the battle screen as the wrong menu and press the same button forever. Battle HUD names and party nicknames are now blanked before the screen is classified, keywords match whole words only, and generated or custom full nicknames can no longer equal a menu word. The same whole-word rule fixes Gen I lookalikes such as FRESH, SODA, PP and RELEASED nicknames, with the 0.4.20 PP fix kept.
+- Add Gen II stuck recovery. A screen that does not change for 1800 frames makes the player back out with B and then try seeded exploratory buttons. Longer trouble reloads an autosave from before it began, with a random idle so the same save does not replay the same hang. Every Gen II menu task now gives up after a step limit, and repeated failures escalate to a reload. The Stuck? badge and notification now come with a real recovery, and reloads, glitched state and help requests are reported truthfully.
+- Fix a KeyError before the game starts that made the trade inventory return HTTP 500. Unknown Gen II YES or NO prompts now answer NO, then YES after three repeats so the story cannot deadlock. Preparing a Gen II trade with every PC box full now fails with a clear message and resumes play instead of pausing, and a leftover trade hold with no live exchange no longer blocks resume.
+- Fix a Gen II slot machine stall at 9899 credits. Once the adventure decided to leave, it pressed only B on the Start! box, which does nothing while the reels spin, so it pressed B forever. It now stops the reels with A, backs out of the bet menu, answers NO to Play again, and treats the 9999 coin case cap as the budget. Slot, coin vendor and prize tasks fail to the stuck path when the screen stops changing, a name entry screen closes after 600 presses, and the Gen II player harness no longer ticks zero frames.
+- Generate Gen II game data in CI so the Gen II runtime tests run there, and read all local Gen II test inputs from `GEN2_DATA_DIR` and `GEN2_CARTRIDGE_DIR` (`GEN2_ROM_DIR` is gone).
+- Extend the private-string scan to case-insensitive matches, personal paths, private network addresses and contact details, and make it fail when git is missing.
+- Fix Gen II adventures stalling on ice, found in the Ice Path pocket on the Mahogany side of B2F. The route planner now reads object positions from the map data, treats hidden objects and warp events on plain ice correctly, replans after every slide, and no longer counts a tile it only slides over as somewhere it can stop. When no route to the goal exists the player returns to the main objective, then explores the least visited way out, and finally asks for a reload instead of waiting forever. `tools/check_gen2_ice.py` lists which warps of every ice map can reach which from the generated map data.
+- Make the shiny-not-caught notification low priority, under "Everything else". Narrow the new-adventure starter list from the chosen cartridge file and refuse a starter from the wrong game before creating the adventure.
+- Correct the release documents: rollback wording (Red and Blue need no restore, Gold, Silver and Crystal need 0.5.0, locked-clock checkpoints are refused by 0.4.x), Gen II in the package description, third-party notices, and a test that loads a Rust-written Gen 1 state into PyBoy 2.7.0.
+
+## 0.4.20
+
+- Fix PC box lists with a nickname containing PP being read as the PP Up menu, which stopped the Release goal from freeing storage.
+
+## 0.4.19
+
+- Keep shiny encounter protection after Transform by reading the wild Pokémon's original DVs.
+- Free a full bag for story items by selling a limited TM only when no ordinary surplus remains. Champion purchases leave one bag slot free.
+
+## 0.4.18
+
+- Fix Settings failing to load when saved backups exist.
+
+- Add optional locally stored PokéAPI artwork for all 125 item statistics entries, independently of Pokémon portraits. Include move names in TM/HM labels.
+- Allocate TMs by projected level-100 Battle Power gain using actual DVs, with a level-50 minimum and material improvement requirements.
+- Replenish Moon Stones, PP Ups, Elixirs, and Max Elixirs at the Champion counter. Add separate capped million-step offers for a Master Ball and five Rare Candies, with progress in Items.
+- Remove stale validation records and unused assets, update maintenance guidance, and keep optional browser imports out of normal test collection.
+
+- Add a Champion TM counter at Celadon Department Store for the 38 limited TMs.
+  The AI purchases useful upgrades for compatible party members with a supply
+  reserve, then teaches them through cartridge menus. Purchases recover safely
+  after interruption and count in item statistics. Protect limited TMs from selling.
+
+- Add Traded in and Traded out to Pokémon Stats, with verified cable-history recovery, final received evolution forms, NPC exchange tracking, and duplicate protection.
+
+- Give Stats its own main tab with Overview, Pokémon, and Items pages. Add searchable action totals for each species and item, preserve recorded catch history, and start new counters without estimating earlier activity.
+
+- Reorganize Stats around shared overview totals, durable milestone times, recent progress, and collection highlights. Show detailed charts in open sections and combine legendary returns with the return-visit and gift cards, preserve unknown historical times, and label existing power charts as Stat Power.
+
+- Simplify adventure controls with Stop and Download labels, a Settings icon beside Open adventure, and always-visible Archive and Delete actions that save and stop first.
+
+- Make all Pokédex header counters species coverage out of 151. Credit perfect and shiny final evolutions to their earlier forms, remove the separate shiny panel, and move individual catch, perfect-find, and shiny totals to Stats.
+
+- Remove Elite Four wins from PC cards, details, and sorting to reduce visual clutter.
+
+- Add moves-aware Battle Power to PC sorting and details, keeping Stat Power and natural potential separate.
+- Evaluate learned moves with the Pokémon's attacking stats, coverage, accuracy, and useful effects.
+- Delay stone evolution for useful level-up moves that would be lost. Improve empty move slots with owned Surf or Strength HMs, even when another partner already knows the field move.
+
+- Hold the mobile direction and action buttons to repeat input, with larger touch targets and cancellation on release, page hiding, or focus loss.
+- Identify Gen 2 shiny-compatible DVs with a distinct star badge in the party, PC, and Pokédex. Add shiny filters, wild sighting counts, capture and custom gift counts, and a current collection count.
+- Preserve shiny partners from automatic release, NPC trades, and trade offers. Prioritize shiny captures and pause for manual control if a shiny cannot be caught with the available balls or storage space.
+- Permanently delete stopped adventures using typed name confirmation. Interrupted deletions stay archived and can resume, while independent backups and shared ROMs remain available.
+- Keep emulated sound hardware running while muted so reconnecting listeners and cable trades preserve audio state. Upgrade supported older muted checkpoints in memory.
+- Add 12 GBC-inspired whole-screen palettes in Adventure Settings. Apply palette changes live, including while paused, without changing game state. Remember the choice per adventure.
+
+## 0.4.17
+
+- Exclude unfinished sprite downloads from backups so installation and backup creation can safely overlap.
+
+- Add an optional community sprite installer in Settings, with download progress, previews and a switch back to default artwork.
+
+- Refresh migrated cartridge portraits without requiring a hard refresh, and recheck replaced image files on later page visits.
+
+- Heal Pokémon whose stored HP exceeds their recalculated maximum after PC withdrawal, preventing repeated save reloads during League rematches.
+- Add a nickname pool editor with full names, built-in choices, exact exclusions, and a pool size preview.
+- Load adventures from verified backups as separate stopped copies, with automatic trading disabled. Show backup dates and sizes in Settings.
+- Present repeat visits and Mew walking requirements as progress cards in Adventure Stats, with separate ready, pending and League-win states.
+- Delete saved backups with confirmation, browse five per page, and see total backup storage.
+- Accept legacy discordapp.com webhook addresses and normalize them to discord.com.
+
+- Add live per-adventure speed controls and clearer Pause, Resume, and Save now actions.
+
+- Fix adventures waiting forever when a poison faint message interrupts a map crossing.
+
+- Add opt-in live game audio at any simulation speed, including Max.
+
+- Add bright type-colored backgrounds with soft spotlights behind Pokémon portraits in the live team, PC, and Pokédex.
+- Update the Docker build tool uv to 0.12.21 from dependency PR #32.
+- Fix PC layouts at intermediate window widths and fit collection cards to the available space.
+- Add editable trainer and rival names with random suggestions when creating adventures.
+- Suggest editable adventure names with a button to generate another.
+
+- Expand built-in nickname vocabulary to 100 prefixes, 70 suffixes and 6,117 names.
+- Add Discord webhook and Telegram bot notifications in the Library. Enable any
+  number of named ntfy, Discord and Telegram integrations, each with its own event
+  filters, adventure subscriptions and test button. Existing settings migrate automatically.
+- Preserve ntfy settings and separate provider credentials when switching.
+- Reuse event filters, screenshots, journal links and test delivery across providers.
+
+
+## 0.4.16
+
+- Add global custom nickname prefixes and suffixes for future catches and League gifts.
+- Rotate a capable reserve into each new League rematch while retaining the strongest
+  teammate, field-move coverage, and trade reservations.
+- Adopt hash-pinned PokeSim Core 0.1.4 for reusable naming, menu, screen, storage and event flag mechanics. Keep reward timing and gameplay policies in PokeSim.
+
+
+## 0.4.15
+
+- Set speed independently for each adventure and remove the running-game cap.
+  Show actual speed, CPU use, memory use, and recent activity on Library cards.
+- Reduce repeated collection decoding, rendering, training destination scans, and
+  navigation cache memory. Preserve the original evolution-training destinations.
+- Export standard cartridge `.sav` files from the Library. Return to the Library
+  through the PokeSim logo and fit the complete game image in fullscreen.
+- Improve Victory Road return routing and release held inputs after restoring saves.
+- Reopen legendary encounters after walking milestones. Add repeat Eevee, dojo,
+  fossil, and supported NPC trade visits after 100,000 new steps by default.
+- Keep League rewards to random starters. Repeat Mew requires 1,000,000 new steps
+  followed by another League win, with one initial Champion gift.
+- Count custom gifts in catch totals and protect the last copy of legendary Pokémon.
+- Record marathon times and personal bests. Recover individual League wins only
+  when historical identity evidence supports attribution.
+- Refresh README screenshots and lead installation with Docker for servers and
+  package-manager commands for desktops.
+- Update security checks to exercise supported controls after removing global limits.
+
+## 0.4.14
+
+- Split Journal into Entries and Stats with matching segmented navigation.
+- Track collection power, strongest-six power, average DVs and level, catches,
+  recorded steps, battles, observed damage, marathons, and game hours.
+- Preserve activity totals across restarts and checkpoint restores. Keep hourly
+  trend samples for 30 days and daily samples afterward with bounded chart responses.
+- Label chart scales, reveal small collection improvements, and leave gaps for
+  missing measurements. Express DV changes in percentage points.
+- Preserve collection measurements when saving immediately after restart and retry
+  failed statistics transactions without losing capture counts.
+- Route Stats correctly through the multi-adventure manager.
+
+## 0.4.13
+
+- Give all Generation I type badges a shared color palette on the live team,
+  Pokédex, and PC, including Pokémon details and Pokédex move types.
+- Include permanent species typing for party and stored Pokémon in the PC API.
+  Keep text labels and high contrast in light, dark, and automatic themes.
+
+## 0.4.12
+
+- Add an occasional Kanto Marathon after the Champion victory. Follow an ordered
+  seven-town course, record steps, battles, healing stops, and time, and celebrate
+  with a short journal entry and screenshot.
+- Save marathon progress and personal bests across restarts. Keep missing Pokédex
+  entries and urgent supplies ahead of recreation, with bounded attempts and a
+  six-hour game-time interval between races.
+
+## 0.4.10
+
+- Add estimated DV rarity and fully trained potential Power to Pokémon details,
+  using the shared probability API in PokeSim Core 0.1.2.
+- Prioritize strong DV candidates for training, require meaningful potential gains
+  before retraining duplicates, and bound hunting before training ordinary partners.
+- Keep trained veterans until their replacements catch up. Protect rare finds from
+  automatic release and trading, with existing locks and explicit offers respected.
+
+## 0.4.8
+
+- Use PokeSim Core 0.1.1 for ROM identities, memory addresses, text and numeric
+  decoding, individual Pokémon fields, and party and bag reads. PokeSim and
+  PokeAgent Bench now consume the same versioned implementation.
+- Install Core automatically with the native package and Docker image. Preserve
+  existing adventures, saves, trading, automation, and application data types.
+
+## 0.4.7
+
+- Fix Game Corner prize confirmation when an older menu cursor remains visible.
+  Adventures with enough coins can finish purchasing Porygon instead of timing out.
+
+- Keep Pokémon details focused on stats and counts. Move DV, training, ranking, and
+  victory-count explanations to the linked Pokémon stats guide. Separate stats,
+  PC storage, and trading into clearly named documentation pages.
+- Default All Pokémon to highest Power first. Calculate Power from offense,
+  durability, and speed instead of adding stats equally, and keep Stat total as
+  a separate sort and API field.
+
+## 0.4.6
+
+- Fix the first ROM upload on fresh Docker and native installations. Generate portraits
+  after automatic adventure setup, using the library's verified reference data instead
+  of the legacy data directory. No manual prepare-data command is needed.
+- Gate Docker releases on first ROM upload, automatic reference setup, portrait generation,
+  worker startup, saving, and restart in an empty library without legacy game data.
+
+## 0.4.5
+
+- Resolve equal filesystem timestamps using autosave filename timestamps, so selecting
+  and pruning saves consistently keeps the newest checkpoint.
+- Add user-account installers for macOS, Linux, and Windows that manage Python 3.12
+  and install the released wheel without Git or pipx.
+- Add a Docker quick-start configuration with a persistent named volume, removing
+  manual data-folder ownership steps for new installations. Existing bind mounts keep
+  their defaults. Local browser URLs now follow custom HTTP ports automatically.
+- Refresh installation, updates, backups, and troubleshooting guides, and move retired
+  single-game instructions into the historical archive.
+- Test installer retries and the Docker quick-start lifecycle in CI, isolate smoke tests
+  from inherited Compose settings, and preserve named volumes in the HTTPS proxy recipe.
+- Include versioned installers and quick-start configuration in release downloads. Keep
+  releases in draft until all uploads are verified, so install commands keep working
+  while the next release is built.
+
+## 0.4.4
+
+- The Pokédex filter strip pins flush against the top rail. A gap between them let the cards
+  show through as they scrolled past.
+- On a phone, adventure pages pin only the tab strip again, as the Library does. The rail's script
+  measured the Library breadcrumb instead of the tabs, so all three rows stayed pinned, about a
+  sixth of the screen.
+- PC storage's box list scrolls inside the window on wide screens, so its top no longer slides
+  under the rail while the lower boxes are out of reach.
+
+## 0.4.3
+
+- A missing Pokédex entry now always comes first. Weighting it only raised its odds, so DV hunts,
+  rematches and the rule against repeating an activity kept taking turns, and two adventures passed
+  1,500 game hours with Dragonite one evolution away. Rematches still come first when money runs out.
+- Training toward a level evolution counts as progress. A turn that ended on time was deferred as a
+  failure, with a longer wait each time, even while the partner gained levels all turn. Those turns
+  now last as long as a training step and can be picked again straight away.
+
+## 0.4.2
+
+- The road so far charts the long goals. Badges are done within the first day, so their line
+  gives way to level 100 species and perfect finds, counted the way the Pokédex counts them. Their
+  history starts with this release; the journal never recorded them.
+- The Pokédex drops the "About these counts" panel below the totals.
+
+## 0.4.1
+
+- The Journal's road-so-far charts now show. Their section shared an id with the live page's
+  exploration count, which the shared page script wrote into it, replacing the charts with a line of text.
+
+## 0.4.0
+
+- The Journal opens with the road so far: Pokédex registered, badges and League wins over time,
+  one step line each on a shared clock. Adventures from before this release are rebuilt once from
+  their Journal entries; seen counts start with this release.
+- Finished exchanges stop piling up on disk. Aborted exchanges drop their staged snapshot as released
+  ones do, only the newest twenty finished exchange folders are kept, and an adventure database with
+  more than 32 MB of free pages is compacted when the adventure starts.
+
+## 0.3.8
+
+- Journal screenshots no longer catch a fade. An entry recorded on a blank screen keeps waiting,
+  up to ten seconds of game time, for a frame that shows something, and its ntfy push waits with it.
+- The trading page never waits on an adventure worker. Inventories for a new exchange are read with
+  no lock held and checked again before the exchange is recorded, so a slow worker no longer blanks
+  the page or holds up adventure starts for up to 110 seconds.
+- Automatic trade matching is about eleven times faster: 0.19 s instead of 2.1 s for a pair of full
+  libraries, every ten seconds, in the manager process.
+- Ruff checks the Python code for unused and undefined names in CI.
+
+## 0.3.7
+
+- Pages load fast. Pooled worker connections and `TCP_NODELAY` remove a ~40 ms stall on every
+  proxied request; assets are fingerprinted and cached for a year; responses are gzipped. Local
+  game requests go from 21–45 ms to 2–5 ms, and a repeat visit to the live page from about 1 MB
+  to 30 KB.
+- Pages hold still while they load. The scrollbar track is reserved, the status pill and the
+  adventure switcher have fixed slots, and the version is printed by the server. Worst layout
+  shift goes from 0.96 to 0.02.
+- The live screen streams native PNG frames. `/frame.jpg` and `/stream` keep their paths but now
+  carry `image/png`.
+- Polish: a cleaner Library › adventure trail, correctly spaced digits and punctuation in the
+  panel font, one-line Pokédex card heads, matching dropdowns on every page.
+
+## 0.3.6
+
+- Every page moves onto one instrument-panel design: shared tokens, one component sheet and a
+  light and a dark theme. Six drifting stylesheets are gone.
+- Boxes line up. The live screen and the six party bays end on the same line and the plan spans
+  the page; settings panels, library cards, journal entries and the PC's box list are sized to
+  their neighbours.
+- Portraits scale by whole pixels everywhere, from one shared scaler.
+
+## 0.3.5
+
+- Read the 151 front portraits out of your own cartridge. Adding a ROM now decodes every front
+  sprite from it into `assets/sprites`, so the Pokédex and the PC are illustrated without anyone
+  hunting for artwork. Nothing is shipped and nothing is fetched for this — the pictures were
+  always in the ROM you supplied. A file already in that folder is never replaced, so a
+  hand-installed pack still wins. The decoder is a port of pret/pokered's `home/uncompress.asm`
+  and every one of the 151 matches that project's reference art pixel for pixel, including Mew,
+  whose header sits outside the base-stats table because it was squeezed into 300 bytes of
+  leftover space late in development.
+- Stop storing a save state with journal entries at all. 0.3.4 narrowed this to eight event
+  types; it should have been none. The rewind it powered is refused outright on any adventure
+  that has completed a trade, because `can_rewind` requires no `trade_barrier` and every earlier
+  checkpoint predates the barrier — so two live adventures were holding 456 MB of save states for
+  a button that could not appear on either of them. Going back to a moment is what the twenty
+  rotating autosaves, the League entry checkpoint and the before-stall checkpoint are for, and
+  those are bounded. A journal entry now costs its screenshot, about 3.6 KB. Entries written
+  earlier keep the states they already have, so nothing that rewinds today stops working.
+
+## 0.3.4
+
+- Keep a save state only for moments worth returning to. A rewind stores a whole emulator save
+  state, and one was kept for every *notable* entry — which conflated three different questions,
+  because notable also decides what reaches the feed and what sends a notification. Levelling up
+  and walking into a Pokémon Center are worth reading and are not worth a snapshot: across two
+  live adventures they were 1,261 of 2,840 states, and 82% of states belonged to types nobody
+  would rewind to. States are now kept for badges, Hall of Fame runs, new partners, evolutions,
+  blackouts, stalls and legendary retries only. Existing entries keep the states they already
+  have, so no rewind that works today stops working.
+
+## 0.3.3
+
+- Compress the save state kept with every notable journal entry. A PyBoy state is 167 KB of
+  mostly zeroed RAM and gzips about ten to one; one is stored for each notable entry so the
+  journal can rewind to that moment, and they are only ever added to. A live server was carrying
+  456 MB of them across two adventures — 2,836 states against 68 MB of screenshots — which is
+  where essentially all of the "40 MB an hour" went. States written before this release stay
+  readable, so an existing library keeps resuming and every old entry keeps its rewind.
+
+## 0.3.2
+
+- Stop staging backups and imports in the container's `/tmp`. `create_backup` copied `assets`,
+  `adventures` and `interactions` into an unqualified `TemporaryDirectory` before writing
+  anything, and the shipped Compose file mounts `/tmp` as a 256 MB tmpfs on a read-only root, so
+  the copy went to RAM and failed on any library past about a quarter of a gigabyte — a library
+  reaches that in a few hours. The backup stops every adventure first and restarts them in its
+  `finally`, so the pre-upgrade backup an operator is told to take was exactly the operation that
+  could not finish. Both legacy import paths had the same defect, including the one that extracts
+  up to two gigabytes. All three now stage inside the application folder, which is what the
+  restore path and three other callers already did.
+- Delete the attempt directories of finished Cable Club exchanges. Every attempt keeps two save
+  states, two cartridge saves and two screenshots — about half a megabyte — and nothing ever
+  removed them, so `interactions/` grew with every exchange and every backup copied the whole
+  accumulated tree into its archive. The live server had 377 of them, 174 MB. The newest twenty
+  resolved exchanges are kept, an unresolved one is never touched whatever its age because
+  recovery still needs its outputs, and zero means keep everything, as it does for autosaves and
+  stall bundles. The legacy coordinator already did this; the application one never got it.
+- Let an adventure bound its own journal. Every notable event stores a full save state beside its
+  screenshot, about 40 MB an hour, and `prune_events` has always existed to trim it — but
+  `event_retention_days` was missing from the Library's settings whitelist, so a managed
+  adventure could not set it and the pruning call was permanently dead. The live server had
+  560 MB of event states across two adventures.
+- Answer a busy emulator with a retry instead of an internal error. `runtime.call` raises
+  `TimeoutError` when the emulator thread has not reached a queued participant operation in
+  45 seconds, and its message asks the caller to retry the same operation — but `TimeoutError` is
+  an `OSError`, not a `RuntimeError`, so it escaped the handler's tuple and became a 500 with a
+  full traceback in the worker log. Seen firing during ordinary play on the live server, not only
+  during shutdown.
+- Back off a recovery that keeps failing. An interrupted exchange that cannot be finished — a
+  participant record lost to a restore, say — was re-driven every 30 seconds indefinitely, and
+  each pass starts the worker again through the recovery path that deliberately ignores a stop
+  request. Retries still never give up, because a committed exchange has to be completed on both
+  sides, but the interval now doubles to ten minutes and the status explains itself after the
+  third failure rather than repeating that progress is saved.
+
+## 0.3.1
+
+- Stop reporting a blackout for a Pokémon that is still being named. `AddPartyMon` raises the party
+  count and writes the species list before the nickname screen, and only fills the struct at
+  `wPartyMons` once naming is over, so for the 27 seconds that screen is up the new partner reads as
+  species 0 with no HP. That counted as a fainted team, so every new adventure recorded two
+  "Blacked out!" entries on its way out of Oak's lab and sent the matching notifications, and the
+  live page showed the slot as `No Mon`, level 0, fainted. A counted slot the cartridge has not
+  filled in yet is now held apart from the team it is joining.
+- Stop registering four starters the player never received. The region the Pokédex flags will later
+  occupy holds other values for a couple of seconds in Oak's lab, which read as owning Bulbasaur,
+  Ivysaur, Charmander and Squirtle at once and put all four in the journal. Every cartridge path
+  that registers a species also marks it seen, so an owned flag arriving without its seen flag is
+  not Pokédex data and is no longer read as any.
+- Keep the post-trade checks when assertions are turned off. The verification that a staged
+  exchange left the party, badges, bag, box counts and every untraded slot alone, and that the
+  arriving Pokémon is the agreed one down to its struct and original trainer, was written as bare
+  `assert` statements, as was the checksum compared just before a staged checkpoint is adopted.
+  `python -O` removes those outright, which would have marked a corrupted exchange staged and
+  adopted it without a word. They raise now.
+- Decode an adventure's response in the application before forwarding it. The proxy streamed the
+  child's raw bytes while dropping `content-encoding` from the headers it passes on, so any
+  compressed response would have reached the browser as undeclared gzip. Nothing compresses one
+  today, which is the only reason this was invisible.
+- Name the commands in `pokesim --help`. The help listed the flags for serving the library and
+  nothing else, so `adventures`, `import`, `import-pair`, `backup` and `restore` could only be
+  found by reading the source, and the usage line called the program `__main__.py` rather than the
+  command that was installed.
+- Darken the small print on the Pokédex cards. The entry number, the caught and seen notes and an
+  unencountered species' name sat between 2.5 and 3.7 to 1 against the card, at nine pixels, so the
+  line telling you whether you have caught something was the hardest thing on the page to read.
+  Every one of them now clears 4.5 to 1.
+- Remove four tools that did nothing of their own. `gen_collection.py`, `gen_strategy.py` and
+  `gen_tables.py` were byte-identical shims around `pokesim.prepare_data`, which the data tools now
+  name directly, and `prepare_desktop_test_data.py` differed from its sibling by one word of
+  docstring. A personal checkout path no longer appears in `link_spike.py`'s error message, and
+  `sample_live.py` asks for a host instead of defaulting to one homeserver's name.
+- Retake the README screenshots against a library that has a portrait pack installed. Every
+  collection view in the old set showed empty squares where the portraits go, which is what a
+  reader saw first and is not what the application does: a missing portrait has drawn a numbered
+  placeholder since 0.2.0. The live shot is now a battle at 1x rather than whatever frame Max
+  speed happened to be on, the PC is sorted by DV rating the way the text beside it claims, the
+  Journal has a picture of its own for the first time, and the unreferenced PNG copy of each view
+  is gone from the source package.
+
+## 0.3.0
+
+- Stack the plan row on a narrow screen. The three columns it reads across kept their layout at
+  every width, so the live page scrolled sideways on a 320 pixel phone.
+- Stop reading finished Cable Club trades at startup. Every completed exchange kept the whole
+  policy snapshot it was staged from, which on a long-running adventure is mostly the learned
+  navigation graph, and startup parsed all of them to act on none of them. An adventure with 229
+  finished trades needed more than three gigabytes to open, missed its readiness deadline, and was
+  started again by the trade recovery waiting on it, which held the machine in that loop until
+  nothing else on it could run. Recovery now reads only unfinished exchanges, releasing a trade
+  drops the snapshot it no longer needs, and records kept by earlier versions are compacted as
+  adventures start.
+- Say why an adventure would not start. The cleanup that stops a worker which never became ready
+  reported its own shutdown deadline instead, so the reason the adventure failed was replaced by a
+  message about stopping it everywhere that error was shown.
+- Train in steps of ten levels instead of aiming straight at 100. Training was also the only kind
+  of work exempt from the planner's recency decay, so once it started it kept winning the draw and
+  a single partner could hold an adventure for hundreds of game hours while trades and unregistered
+  species waited. It still leads when there is nothing new to register, by 247 draws to 173 in the
+  settled case, rather than by never stopping.
+- Value a trade that triggers an evolution at 40 even when the evolved species is already
+  registered. Kadabra coming back an Alakazam scored nothing once Alakazam was in the book, despite
+  the cable being the only way it can happen.
+- Say what crossed the Cable Club. A completed trade recorded the same sentence every time and drew
+  a placeholder beside it; the entry now names both Pokémon and the trainer on the other end, and
+  the journal card shows the two of them either side of a swap arrow. Events gained a `detail`
+  column for that, added by the store's own migration. Trades staged by an older build keep the
+  previous wording.
+- Build nicknames from prefix and suffix pairs, 1,616 of them instead of 100. An adventure
+  remembers every name it has used, so after a hundred Pokémon the draw fell back to the whole list
+  and began repeating. The written names are unchanged and still come first.
+- Encode a game frame only while something is asking for one, and no faster than the stream shows
+  them. At Max speed the emulator was encoding about 1,100 JPEGs a second for a viewer that shows
+  fifteen, whether or not a browser was open: Max goes from about 74x to about 314x real time.
+- Decode screen tiles and event flags from lookup tables, worth about 14% of a headless run on its
+  own.
+- Simplify the top bar. The adventure bar carried eight items in one row using three different
+  looks for navigation, and the link that left the adventure was bolder than the page you were on.
+  One breadcrumb answers where you are, tabs share one active treatment with the library, and the
+  edition badge that three other places already stated is gone.
+- Give the live page its space back. The plan moves to a full-width row along the foot, the game
+  screen grows from 400 to 560 pixels, and the team column runs the full height beside it with six
+  slots, each card carrying its moves, remaining PP and DV rating.
+- Hold the plan steady. The planner reports its gap between projects as an objective of its own, so
+  the row cycled between the real goal, "Plan the next adventure project" and the ceremony several
+  times a minute.
+- Cut the Pokédex overview to registered, seen, caught, level 100 and perfect finds. Level 100 was
+  labelled and badged with a star, which put a milestone in the same visual language as the DV
+  ratings beside it; it reads as a flag now. Three-star DVs are still recorded, badged and
+  filterable.
+- Give the app a mark of its own, a handheld rather than the `p.` lockup, in the browser tab and
+  the top bar.
+- Let the seed vary a stall hunt that continues from a checkpoint. A checkpoint carries the policy's
+  own random state, so `tools/find_stalls.py --seed` was ignored and four postgame hunts with four
+  seeds were one hunt repeated four times. Scenario replays still make the original choices.
+- Put new Pokédex entries before the level 100 grind. While any missing species can be caught or
+  evolved, those projects are chosen about two times in three and training about one in five. It
+  used to be the other way round, and wild Pokémon stop near level 45, so two adventures spent most
+  of 400 game hours in Pokémon Mansion with 27 obtainable entries missing. Once nothing new is on
+  offer, training leads as before.
+- Evolve a partner with a stone before training it to level 100. A Weepinbell was being trained
+  with Victreebel unregistered.
+- Stop building standalone executable bundles. The PyInstaller build, its checks and its workflow are
+  removed. Install the Python package with pipx, or run the container.
+
+## 0.2.1
+
+- Train for the League in Route 23's grass. Training places were found by the overworld's grass
+  tile, and Route 23 uses the Plateau tileset's, so the goal had no destination. A fresh run with
+  eight badges drifted along Route 21 for seventeen game hours before entering the League.
+- Keep Mt. Moon as the goal wherever a side project leads before it is cleared. Back in Viridian
+  Forest the goal became training for Misty on Route 24, which lies beyond the mountain, so two of
+  three fresh runs wandered between Route 1 and Route 22 and reached Misty after nine game hours
+  instead of three.
+- Choose the second League battler the same way whatever the party order. With two partners tied
+  for the highest level, moving the chosen partner to the lead changed the choice, and a run with
+  eight badges swapped Lapras and Muk in the party menu of Pokémon Mansion indefinitely.
+- Keep each stall for later. An adventure's `stalls/` folder holds the moment a stall was reported
+  beside the first autosave after the last achievement, which the rotating autosaves had long
+  dropped by then. `KEEP_STALL_BUNDLES` sets how many are kept, 5 by default, 0 for none.
+- Replay stuck scenarios as regression tests with `tools/stuck_scenarios.py`. A scenario is a copied
+  save, optionally edited into a harder situation such as a frozen party with no cures at the League door.
+- End a battle in which nobody can act. The original trainer routine favours any move of a super
+  effective type, so Lorelei's Dewgong only uses Rest against a frozen Muk and never knocks it out.
+  The player hands over to a partner the foe does attack, and when there is none the save from
+  before the battle is reloaded at once instead of after the battle timeout.
+
+## 0.2.0
+
+- Respect the badge checks on Route 23, plan restocking only at shops that can be reached, and spend
+  vitamins and Rare Candies when the bag is too full to buy Poké Balls. A run with six badges and a
+  bag of keepsakes argued with the Volcano Badge guard on its way to the Indigo Plateau shop.
+- Restart a League attempt that cannot be finished. A checkpoint is kept from the moment the
+  attempt begins, and it is used when a battle runs past the timeout twice with no progress between.
+- Tell party members of one species apart when changing the lead. With two Haunters the run
+  thought the stronger one already led, and reopened the party menu at a gym door forever.
+- Buy Full Heals before the League, keep the save from before an endless battle until the
+  timeout reloads it, and idle a random moment after that reload so the battle plays out
+  differently. Lance's Dragonair can use Agility forever against a frozen last partner.
+- Heal at a real Center once Silph Co is freed, because its nurse stops healing then, and stand
+  next to her before that instead of two squares away. A sleeping partner kept a run at her side indefinitely.
+- Hand over or revive a partner when the active Pokémon is frozen. Freeze never thaws in these
+  games, and a foe with only Normal attacks could not finish a frozen Ghost, so the battle never ended.
+- Find a Cut, Surf or Strength partner in any PC box and open that box before withdrawing.
+  A run whose gift Lapras sat in another box hunted for a Surf partner it could never reach.
+- Keep fighting with the last partner standing. The party menu used to choose the partner
+  already in battle, which the game refuses, and the battle never ended.
+- Leave edge exits such as cave mouths by walking outward. A run that needed healing paced
+  between Victory Road 2F's two east exit squares indefinitely.
+- Sell a spare valuable to raise the Safari Zone entry fee. A run that reached the gate
+  short of the fee used to talk to the attendant indefinitely, and shopping now leaves
+  the fee untouched until Surf and the Gold Teeth are collected.
+- Report a stall. An adventure with no achievement for two hours of game time and
+  fifteen real minutes records a `stall` journal entry with the saved moment, shows
+  Stuck? on Live, and sets `stalled` in the Library summary. Managed trades do not
+  count as progress. `STALL_ALERT_GAME_MINUTES=0` turns it off.
+- Add `tools/find_stalls.py`, which plays an isolated adventure at full speed and keeps
+  a replayable bundle for every stall it finds.
+- Keep the last Surf partner out of automatic trades, and stop revisiting the Silph
+  worker once his Lapras is registered. A run that traded the gift Lapras away before
+  collecting HM03 had no reachable way to cross water.
+- Set up phone notifications from the Library's new Notifications page, with no
+  account or settings file. Choose the ntfy server and topic, generate a random
+  topic, add an optional access token, and send a test notification.
+- Choose which adventures notify and which kinds of news are sent, including a
+  "Stuck or needs attention" kind. Changes reach running adventures right away.
+- Name the adventure in every notification title, and announce completed trades once.
+- Keep `NTFY_URL`, `NTFY_TOKEN`, `NTFY_MIN_PRIORITY` and `NTFY_MUTE` as the defaults
+  until notifications are saved in the Library.
+
+## 0.1.2
+
+- Install with one pipx or pip command from the repository, with no checkout, uv,
+  or release URL to keep up to date.
+- Point the container quick start at the latest published release and image.
+
+## 0.1.1
+
+- Show All Pokémon in the PC as a compact card grid again, so many more partners
+  fit on screen. Lock and trade actions are in each partner's details.
+
+## 0.1.0
+
+- Show the trainer, badges, registrations, League wins, money and play time above
+  the Live game and party panels.
+- Publish GHCR images automatically when a GitHub release is published, with anonymous pull
+  verification, and versioned Compose downloads for Python and Docker releases.
+- Consolidate the Adventure Library and independent Red and Blue workers on main.
+- Coordinate automatic Cable Club trading with protected partners and recovery.
+- Add PC DV star ratings, rating filters, and persistent three-star Pokédex counts.
+- Keep level 100 and perfect-DV milestones across checkpoint restores.
+- Track captures, current ownership, and individual League victories.
+- Improve repeat catching, training, NPC exchanges, healing, and PC cleanup.
+- Preserve party detail dialogs and use one global simulation pace setting.
+- Update dependencies and verify Python installations across five native targets.
+- Align publication with Python packages and Docker, verified draft checksums,
+  and the Adventure Library startup and worker lifecycle.
+
+## 0.2.0rc31, experimental beta
+
+Desktop setup, collection controls, and lifecycle hardening. Existing deployments
+must be upgraded separately.
+
+### Lifecycle and verification
+
+- Report final-save failures as unsuccessful server exits.
+- Share runtime ownership between desktop and server launchers. Hold an adventure
+  directory lock until the worker stops and its database closes.
+- Clear stale input, recovery timers, and transient menu state on appropriate
+  transitions while preserving checkpoint memory and existing journal history.
+- Extract shopping and storage controllers with explicit state and decision inputs.
+- Report source revision and dirty state, and embed build identity in distributions.
+- Add real Chromium scenarios to CI and release checks, plus bounded private replay
+  comparisons with progress sampling and input-integrity checks.
+
+### One-time Mew reward
+
+- Award one level-5 Mew after defeating the final Champion rival, separately from
+  repeatable Championship rewards. Existing Mew registrations and delivery records
+  prevent another gift after rematches, trades, or reloads.
+- Remove Mew from the random reward pool. Preserve pending selections for the other
+  seven species and existing Pokémon. Reward-enabled coordinators also enable the
+  separate Mew gift, including policies carrying the older disabled Mew flag.
+
+### Desktop and collection controls
+
+- Add the desktop launcher with local browser setup, verified reference preparation,
+  persistent save locations, process locking, and native packaging workflows.
+- Add game-local trading views, explicit offers and withdrawals, and partner locks
+  that protect against automatic release and trading.
+- Separate physical box browsing from the sortable whole-collection view.
+
+### Repository maintenance
+
+- Index current documentation and archive earlier roadmap, status, and operations logs.
+- Extract event-page rendering and its rewind handler. Display rejected rewind requests
+  without leaving the event page.
+- Run all browser checks and local documentation link checks in CI and release validation.
+- Include README screenshots in source packages and verify newer runtime assets.
+
+## 0.2.0rc30, avoid distant shopping for optional supplies
+
+- Require affordable core supplies or saleable items before starting distant ordinary
+  shopping trips. Keep optional top-ups in the current mart and preserve legendary preparation.
+
+## 0.2.0rc29, renew preparation through real training gains
+
+- Renew preparation time only when the selected trainee gains XP. Bound total training
+  and preparation to 150 game minutes while retaining inactivity checks.
+
+## 0.2.0rc28, productive training with bounded preparation
+
+- Separate preparation from active training budgets, persist progress across saves and
+  trades, and favor nearby training targets. Show preparation separately in Live.
+
+## 0.2.0rc27, include the party in PC comparisons
+
+- Include party members in combined searches, sorting, and strongest-partner rankings.
+  Add a Party scope with the same stat details as boxed Pokémon.
+
+## 0.2.0rc26, find the strongest stored partners
+
+- Add Power and individual-stat sorts using calculated current-level stats, plus a
+  strongest-partners shortcut and five-stat breakdown.
+
+## 0.2.0rc25, retreat from stalled Victory Road healing
+
+- Try one ordinary Escape Rope when healing recovery stalls in Victory Road. Preserve
+  the attempt across saves and trades until the party is fully healed.
+- Preserve recent valid event observations through short invalid PC-transfer readings.
+
+## 0.2.0rc24, independent exchange safe points
+
+- Request each game's safe checkpoint independently within a shared retry window.
+  Abort rejected or timed-out preparation and release its holds.
+
+## 0.2.0rc23, share safe points between rewards and trades
+
+- Give overdue useful exchanges a turn after reward delivery attempts. Persist the
+  scheduling state so a reward backlog cannot indefinitely displace trades.
+
+## 0.2.0rc22, recognize PC withdrawals in either write order
+
+- Avoid recording a release when cartridge RAM updates a withdrawal in separate steps.
+  Retain genuine release events and existing journal history.
+
+## 0.2.0rc21, complete Articuno's current puzzle
+
+- Plan the Seafoam B3F boulder drops before attempting Surf on B4F, preserve completed
+  drops across reentry, and avoid dropping the player through the holes.
+
+## 0.2.0rc20, recover missed legendary encounters
+
+- Restore eligible missed encounters after leaving the room and waiting a persistent
+  retry delay. Preserve damage, spent items, and progress. Registered species stay resolved.
+- Correct generated toggle-object indexing used by late-map visibility flags.
+
+## 0.2.0rc19, prepare and complete legendary expeditions
+
+- Give legendary projects their own priority, bounded budget, supply preparation, and
+  progress accounting. Use status and balls without potentially lethal damage attacks.
+
+## 0.2.0rc18, repeatable Championship rewards
+
+- Award one random level-5 starter, Eevee, fossil Pokémon, or Mew for each newly observed
+  Championship, with durable delivery and pending claims when storage is full.
+  The rc31 candidate above separates Mew from this historical pool.
+
+## 0.2.0rc17, varied choices and broader exchanges
+
+- New runs choose a seeded random fossil and Eevee evolution, persisted across reloads.
+- Optional last-copy trades unlock new Pokédex registrations while protecting parties,
+  current projects, and explicitly protected species. Unique partners are not exchanged
+  merely to restore collection gaps or improve stats.
+- An optional one-time postgame PokeSim Mew distribution uses backed-up checkpoints,
+  verified inventory preservation, and the existing durable hold and recovery controls.
+  Gifts are labeled as custom events and counted separately from trades.
+- Starter and Eevee supply farming remain outside scope.
+
+## 0.2.0rc16, scoped automatic trading
+
+- Coordinate trades through authenticated controls and durable game holds, without Docker access or a root service.
+- Recover holds across game restarts and load both committed inventories before releasing either adventure.
+
+## 0.2.0rc15, regular exchanges between trusted adventures
+
+- Enable useful spare exchanges for explicitly configured peers, including exclusives, trade evolutions, and meaningful training upgrades.
+- Stage and verify both saves, journal completed exchanges, and recover interrupted transactions without repeating a swap.
+- Prevent restores from undoing one side of a completed exchange. Show trade history and opportunities on the board.
+
+## 0.2.0rc14, compare stored partners
+
+- Sort selected or all storage boxes by level, total DVs, total stat experience, total experience, Pokédex number, species, nickname, or box order.
+- Apply sorting before pagination, keep the selection in the URL, and show individual stat totals on cards and in details.
+
+- Record verified training gains as partial progress when the idle guard abandons a project.
+- Keep the idle deadline and retry delay, without escalating productive attempts as repeated failures.
+
+## 0.2.0rc13, count reserve preparation once
+
+- Start a fresh training idle window when the selected partner first reaches a stable party snapshot.
+- Persist that milestone through reloads and keep the overall expedition deadline unchanged.
+
+## 0.2.0rc12, leave Seafoam through the ladders
+
+- Avoid Seafoam floor holes during routine navigation, including remembered steps that previously fell between floors.
+- Route exhausted parties out of the fall-and-current loop to healing and resume the adventure.
+- Keep the held rc11 obstacle experiment out of this release.
+
+## 0.2.0rc11 candidate, respect obstacles on remembered routes
+
+- Apply observed solid-object positions to remembered steps on the current map. Preserve distant learned routes until fresh object positions are available.
+- Stop walking through a remembered Victory Road route when a boulder has returned to the path.
+- Allow the route again when the object moves away or is confirmed hidden.
+
+## 0.2.0rc10, verify training after PC transfers
+
+- Accept training progress in battle or after returning to the overworld, avoiding temporary level values during PC withdrawals.
+- Keep transfers and missing party entries from resetting the training idle timer.
+- Preserve project state across reloads and count subsequent experience and level gains normally.
+
+## 0.2.0rc9, recover routes after Victory Road switches reset
+
+- Ignore remembered steps through currently closed puzzle gates.
+- Reach the upper puzzle by ladder when reentry leaves the lower boulder inaccessible.
+- Preserve existing saves, parties, and ongoing postgame projects.
+
+## 0.2.0rc8, persistent postgame projects and varied starters
+
+- Collect nearby reachable ground items during ordinary travel and collection expeditions, including caves. Verify collection, respect bag capacity, and preserve the original project during bounded detours.
+- Choose a seeded random starter for new adventures, with a persisted choice and a fixed `STARTER` setting.
+- Rotate postgame collection, evolution, training, and exploration projects using persistent recent choices and outcomes.
+- Train party and stored partners toward level milestones, with progress measured for the selected partner.
+- Increase retry delays for repeated failures and bound the retained planning history.
+- Keep old checkpoint compatibility and retain existing Pokémon when configuration changes.
+
+- Register the received Pokémon and any trade evolution in the recipient's Pokédex when staging a save-based exchange. Verified on copied Red and Blue saves. Live trading remains disabled.
+
+## 0.2.0rc7, continuing adventures and visible progress
+
+- Restore planner timing safely and replan stationary objectives without rewinding the game.
+- Clear the loose east-corridor boulder when returning through Victory Road.
+- Check every expedition's route and retire unproductive objectives with a retry cooldown.
+- Show Live activity and the last achievement with its age.
+- Keep playtime announcement history across checkpoint reloads.
+- Package the read-only trade board and save-based trade executor.
+- Consolidate the deployed Live, Pokédex, PC, journal, nickname, storage, and persistent clock work into a reproducible release.
+
+- Add a `/pokedex` page: all 151 entries with types, base stats, learnsets, evolution families, and Kanto locations, filtered by search, type, record, and availability.
+- Show the traveling party and every storage box, with each resident linked to its Pokédex entry.
+- Serve entry data from `/api/pokedex` and live records from `/api/pokedex/status`, and link out to Bulbapedia, Serebii, and Wikipedia.
+- Add sixteen tests covering the reference data, the live status shape, and the new endpoints.
+- Stop planning Pokédex projects that need the PC when storage cannot serve them: with a full party and every box full, the run no longer walks to a PC and cycles its menu.
+- Release spare stored duplicates to keep about five storage slots free, so an unattended run never runs out of room. One copy of every species always survives, the lowest-level duplicate goes first, and a current evolution project's partner is never released.
+- Answer a release confirmation only while a release is the active goal, and decline it otherwise.
+- Record releases in the journal at minimal priority.
+
+## 0.2.0rc6, unidentified ghost encounters
+
+- Flee wild Pokémon Tower encounters before obtaining the Silph Scope.
+- Preserve normal decisions for trainers, identified ghosts, and battles outside the Tower.
+- Add ten regression cases and verify escape from a copied stalled checkpoint.
+
+## 0.2.0rc5, storage withdrawal fix
+
+- Allow an evolution partner to be withdrawn from a full box when the party has space.
+- Stop selecting the source box again once it is already active.
+- Keep capacity handling for full parties and boxes without the requested partner.
+- Add four regression tests and verify the fix against a copied game checkpoint.
+
+## 0.2.0rc4, reliable game display
+
+- Load and decode one game image at a time, capped at 10 display frames per second independently of game speed.
+- Retain the last good image through request failures and invalid frames, with bounded timeouts and automatic recovery.
+- Stop hidden-tab frame downloads and remove competing MJPEG reconnect handlers.
+- Add browser-controller regression tests for serialization, decode failures, timeouts, and visibility changes.
+- Leave emulator behavior, game speed, save formats, and health checks unchanged.
+
+## 0.2.0rc3, planner reliability fix
+
+- Share one bounded navigation search across collection candidates to prevent repeated route searches from stalling emulation after the League.
+- Keep the health threshold unchanged and add regression tests for search reuse, directionality, obstacles, and search limits.
+- Preserve failing health details and correct stopped-run statuses in the endurance harness.
+- Detect campaign completion from the saved Hall of Fame count after leaving the ceremony.
+- Include Docker, Compose, proxy, and validation files in the Python source archive.
+- Correct release status claims to disclose the failed earlier endurance run.
+
+## 0.2.0rc2, experimental public beta
+
+- Start a clean public source history with original code under MIT.
+- Publish versioned Docker image archives and source packages with checksums, without requiring registry or GitHub credentials to download.
+- Document local game-data preparation, supported platforms, access controls, backup, upgrade, and rollback.
+- Provide private vulnerability reporting and explicit beta limitations.
+- Preserve the gameplay and checkpoint behavior of the candidate under endurance testing.
+
+The prior engineering candidate established atomic checkpoint recovery, rootless containers, authenticated proxy deployment, dependency notices and emulator source preservation, and local preparation of game content. The first endurance run later stopped on a campaign health failure. See RELEASE_STATUS.md for current results.

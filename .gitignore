@@ -1,28 +1,39 @@
-# Python
+roms/
+/data/
+.venv/
 __pycache__/
-*.py[cod]
+*.pyc
+*.state
+.pytest_cache/
+.env
+.env.*
+!.env.example
+*.gb
+*.gbc
+*.sav
+*.ram
+*.sqlite*
+*.log
 *.egg-info/
 build/
 dist/
-.venv/
-venv/
-.pytest_cache/
-.coverage
-htmlcov/
+pokesim-backup*
+restored/
+pokesim/data/*.json
+pokesim/web/static/sprites/
+.reference/
+.release-local/
+image-*.tar.gz
+SHA256SUMS
+release/
+manifest-output.txt
+manifest-error.txt
 
-# Local configuration and secrets
-.env
-data/settings.json
-data/games.json
+# Separate emulator checkout, kept as a local convenience link.
+/pyboy-rs
 
-# Runtime state, extracted ROMs and emulator saves
-data/games/
-data/roms/
-roms/*
-!roms/.gitkeep
+# Stylelint and other Node development tools, installed with npm ci.
+node_modules/
 
-# Editors / OS
-.DS_Store
-.idea/
-.vscode/
-*.swp
+# Layout audit reports and other local working files.
+/scratchpad/

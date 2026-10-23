@@ -1,0 +1,202 @@
+import hashlib
+import io
+import json
+from pathlib import Path
+import tarfile
+import zipfile
+
+import pytest
+
+from tools.assemble_release import DESKTOP_ARCHIVES, assemble, digest
+
+
+VERSION = '0.2.0rc99'
+REVISION = 'a' * 40
+
+
+@pytest.fixture
+def assets(tmp_path):
+    identity = {'version': VERSION, 'revision': REVISION, 'dirty': False}
+    raw = json.dumps(identity).encode()
+    with zipfile.ZipFile(tmp_path / f'pokesim-{VERSION}-py3-none-any.whl', 'w') as archive:
+        archive.writestr('pokesim/_build.json', raw)
+    with tarfile.open(tmp_path / f'pokesim-{VERSION}.tar.gz', 'w:gz') as archive:
+        entry = tarfile.TarInfo(f'pokesim-{VERSION}/pokesim/_build.json')
+        entry.size = len(raw)
+        archive.addfile(entry, io.BytesIO(raw))
+    for name in DESKTOP_ARCHIVES:
+        (tmp_path / name).write_bytes(b'archive contents')
+        checksum = hashlib.sha256(b'archive contents').hexdigest()
+        (tmp_path / (name + '.sha256')).write_text(f'{checksum}  {name}\n')
+        (tmp_path / (name + '.json')).write_text(json.dumps({
+            **identity, 'archive': name, 'sha256': checksum,
+        }))
+    (tmp_path / 'image-linux-amd64.tar.gz').write_bytes(b'image contents')
+    (tmp_path / 'image-metadata.json').write_text(json.dumps({
+        'Id': 'sha256:example', 'Os': 'linux', 'Architecture': 'amd64',
+        'Config': {'Labels': {'org.opencontainers.image.version': VERSION,
+                              'org.opencontainers.image.revision': REVISION}},
+    }))
+    (tmp_path / 'python-dependencies.json').write_text('[]')
+    (tmp_path / 'compose.yaml').write_text('services:\n'
+                                         '  pokesim:\n'
+                                         '    image: ${POKESIM_IMAGE:-pokesim:local}\n'
+                                         '  prepare-data:\n'
+                                         '    image: ${POKESIM_IMAGE:-pokesim:local}\n')
+    (tmp_path / 'env.example').write_text('POKESIM_IMAGE=pokesim:local\n')
+    root = Path(__file__).resolve().parents[1]
+    for name in ('compose.quickstart.yaml', 'install.sh', 'install.ps1'):
+        (tmp_path / name).write_text((root / name).read_text())
+    return tmp_path
+
+
+def test_complete_release_checksums_cover_every_download_and_manifest(assets):
+    assemble(assets, VERSION, REVISION)
+    assert (assets / 'env.example').read_text() == f'POKESIM_IMAGE=pokesim:{VERSION}\n'
+    assert (assets / 'compose.yaml').read_text().count(f'POKESIM_IMAGE:-pokesim:{VERSION}') == 2
+    sums = dict(line.split('  ', 1)[::-1] for line in (assets / 'SHA256SUMS').read_text().splitlines())
+    assert set(sums) == {path.name for path in assets.iterdir()} - {'SHA256SUMS'}
+    for name, checksum in sums.items():
+        assert digest(assets / name) == checksum
+    # Local assembly can be repeated before a draft is uploaded.
+    before = (assets / 'SHA256SUMS').read_bytes()
+    assemble(assets, VERSION, REVISION)
+    assert (assets / 'SHA256SUMS').read_bytes() == before
+
+
+def test_missing_native_target_blocks_release(assets):
+    (assets / DESKTOP_ARCHIVES[0]).unlink()
+    with pytest.raises(ValueError, match='Missing release assets'):
+        assemble(assets, VERSION, REVISION)
+    assert not (assets / 'manifest.json').exists()
+
+
+@pytest.mark.parametrize('name', ['install.sh', 'install.ps1', 'compose.quickstart.yaml'])
+def test_missing_setup_download_blocks_release(assets, name):
+    (assets / name).unlink()
+    with pytest.raises(ValueError, match='Missing release assets'):
+        assemble(assets, VERSION, REVISION)
+    assert not (assets / 'manifest.json').exists()
+
+
+@pytest.mark.parametrize('name', ['install.sh', 'install.ps1'])
+def test_unversioned_installer_blocks_release(assets, name):
+    (assets / name).write_text('no version marker\n')
+    with pytest.raises(ValueError, match='must select exactly one release version'):
+        assemble(assets, VERSION, REVISION)
+    assert not (assets / 'manifest.json').exists()
+
+
+@pytest.mark.parametrize('change', [{'revision': 'b' * 40}, {'dirty': True}, {'version': '0.1.0'}])
+def test_mixed_or_dirty_desktop_build_blocks_release(assets, change):
+    path = assets / (DESKTOP_ARCHIVES[0] + '.json')
+    path.write_text(json.dumps({**json.loads(path.read_text()), **change}))
+    with pytest.raises(ValueError, match='same clean tagged revision'):
+        assemble(assets, VERSION, REVISION)
+
+
+def test_changed_archive_blocks_release(assets):
+    (assets / DESKTOP_ARCHIVES[0]).write_bytes(b'changed download')
+    with pytest.raises(ValueError, match='build receipt'):
+        assemble(assets, VERSION, REVISION)
+
+
+def test_wrong_container_revision_blocks_release(assets):
+    path = assets / 'image-metadata.json'
+    metadata = json.loads(path.read_text())
+    metadata['Config']['Labels']['org.opencontainers.image.revision'] = 'b' * 40
+    path.write_text(json.dumps(metadata))
+    with pytest.raises(ValueError, match='Container identity'):
+        assemble(assets, VERSION, REVISION)
+
+
+def test_wrong_wheel_revision_blocks_release(assets):
+    with zipfile.ZipFile(assets / f'pokesim-{VERSION}-py3-none-any.whl', 'w') as archive:
+        archive.writestr('pokesim/_build.json', json.dumps({
+            'version': VERSION, 'revision': 'b' * 40, 'dirty': False,
+        }))
+    with pytest.raises(ValueError, match='same clean tagged revision'):
+        assemble(assets, VERSION, REVISION)
+
+
+def test_unexpected_private_file_blocks_release(assets):
+    (assets / 'adventure.state').write_bytes(b'private state')
+    with pytest.raises(ValueError, match='Unexpected release assets'):
+        assemble(assets, VERSION, REVISION)
+
+
+def test_python_and_docker_release_excludes_standalone_archives(assets):
+    for name in DESKTOP_ARCHIVES:
+        for suffix in ('', '.sha256', '.json'):
+            (assets / (name + suffix)).unlink()
+    (assets / 'compose.yaml').write_text('services:\n  pokesim:\n    image: ${POKESIM_IMAGE:-pokesim:local}\n')
+    assemble(assets, VERSION, REVISION, include_desktop=False)
+    assert not (assets / 'desktop-manifest.json').exists()
+    sums = dict(line.split('  ', 1)[::-1] for line in (assets / 'SHA256SUMS').read_text().splitlines())
+    assert set(sums) == {path.name for path in assets.iterdir()} - {'SHA256SUMS'}
+    assert all(digest(assets / name) == checksum for name, checksum in sums.items())
+
+
+@pytest.fixture
+def registry_assets(assets):
+    for name in DESKTOP_ARCHIVES:
+        for suffix in ('', '.sha256', '.json'):
+            (assets / (name + suffix)).unlink()
+    path = assets / 'image-metadata.json'
+    metadata = json.loads(path.read_text())
+    metadata['RepoTags'] = [f'ghcr.io/afk-sapien/pokesim:{VERSION}']
+    metadata['RepoDigests'] = ['ghcr.io/afk-sapien/pokesim@sha256:' + 'b' * 64]
+    path.write_text(json.dumps(metadata))
+    # Use the actual shipped configuration, including its future release default.
+    root = Path(__file__).resolve().parents[1]
+    (assets / 'compose.yaml').write_text((root / 'compose.yaml').read_text())
+    (assets / 'env.example').write_text((root / '.env.example').read_text())
+    return assets
+
+
+def test_registry_release_pins_configuration_and_records_digest(registry_assets):
+    image = f'ghcr.io/afk-sapien/pokesim:{VERSION}'
+    assemble(registry_assets, VERSION, REVISION, include_desktop=False, image=image)
+    manifest = json.loads((registry_assets / 'manifest.json').read_text())
+    assert manifest['image'] == image
+    assert manifest['image_digest'] == 'ghcr.io/afk-sapien/pokesim@sha256:' + 'b' * 64
+    assert '${POKESIM_IMAGE:-' + image + '}' in (registry_assets / 'compose.yaml').read_text()
+    assert f'POKESIM_IMAGE={image}\n' in (registry_assets / 'env.example').read_text()
+    assert '${POKESIM_IMAGE:-' + image + '}' in (registry_assets / 'compose.quickstart.yaml').read_text()
+    assert f'    version={VERSION}\n' in (registry_assets / 'install.sh').read_text()
+    assert f"$version = '{VERSION}'\n" in (registry_assets / 'install.ps1').read_text()
+    sums = dict(line.split('  ', 1)[::-1]
+                for line in (registry_assets / 'SHA256SUMS').read_text().splitlines())
+    assert set(sums) == {path.name for path in registry_assets.iterdir()} - {'SHA256SUMS'}
+    assert all(digest(registry_assets / name) == checksum for name, checksum in sums.items())
+    before = (registry_assets / 'SHA256SUMS').read_bytes()
+    assemble(registry_assets, VERSION, REVISION, include_desktop=False, image=image)
+    assert (registry_assets / 'SHA256SUMS').read_bytes() == before
+
+
+@pytest.mark.parametrize('image', [
+    'ghcr.io/afk-sapien/pokesim:latest',
+    'ghcr.io/afk-sapien/pokesim:0.1.0',
+    f'docker.io/afk-sapien/pokesim:{VERSION}',
+])
+def test_registry_release_rejects_wrong_destination_or_version(registry_assets, image):
+    with pytest.raises(ValueError, match='exact release version'):
+        assemble(registry_assets, VERSION, REVISION, include_desktop=False, image=image)
+    assert not (registry_assets / 'manifest.json').exists()
+
+
+@pytest.mark.parametrize('field,value', [
+    ('RepoTags', []),
+    ('RepoDigests', []),
+    ('RepoDigests', ['ghcr.io/someone/else@sha256:' + 'b' * 64]),
+    ('RepoDigests', ['ghcr.io/afk-sapien/pokesim@sha256:invalid']),
+])
+def test_registry_release_requires_published_image_evidence(registry_assets, field, value):
+    path = registry_assets / 'image-metadata.json'
+    metadata = json.loads(path.read_text())
+    metadata[field] = value
+    path.write_text(json.dumps(metadata))
+    with pytest.raises(ValueError, match='Registry image'):
+        assemble(registry_assets, VERSION, REVISION, include_desktop=False,
+                 image=f'ghcr.io/afk-sapien/pokesim:{VERSION}')
+    assert not (registry_assets / 'manifest.json').exists()

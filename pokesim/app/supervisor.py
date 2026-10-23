@@ -1,0 +1,561 @@
+"""Explicit child launch, bounded health checks and restart policy."""
+from __future__ import annotations
+
+from collections import deque
+from contextlib import nullcontext
+import json
+import logging
+import os
+from pathlib import Path
+import queue
+import secrets
+import subprocess
+import sys
+import threading
+import time
+
+import httpx
+import psutil
+
+from ..downloads import DataDownloadError
+from .registry import digest, identifier
+from .resources import ObservedSpeed, ProcessUsage, recent_activity
+
+log = logging.getLogger(__name__)
+
+GEN2_VERSIONS = {'gold', 'silver', 'crystal'}
+SETUP_RETRIES = 3
+SETUP_DELAYS = (30, 120, 300)
+
+
+class Child:
+    def __init__(self, bootstrap, command=None):
+        self.bootstrap = bootstrap
+        self.token = bootstrap['token']
+        self.generation = bootstrap['generation']
+        self.notified = None
+        self.observer = None   # aid, line -> None, for the library watchdog
+        self.watch = None      # (time, latest /api/summary) kept by the monitor
+        self.process = None
+        self.usage = None
+        self.url = None
+        self.logs = deque(maxlen=100)
+        self.command = command or ([sys.executable, '--worker'] if getattr(sys, 'frozen', False)
+                                   else [sys.executable, '-m', 'pokesim.runtime.worker'])
+        self.ready = queue.Queue(maxsize=1)
+        self.log_path = Path(bootstrap['settings']['data_dir']) / 'logs' / 'worker.log'
+
+    def start(self, timeout=45):
+        env = os.environ.copy()
+        if not getattr(sys, 'frozen', False):
+            root = str(Path(__file__).resolve().parents[2])
+            env['PYTHONPATH'] = root + os.pathsep + env.get('PYTHONPATH', '')
+        self.process = subprocess.Popen(self.command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                        stderr=subprocess.PIPE, text=True, bufsize=1, env=env)
+        try:
+            self.usage = ProcessUsage(self.process.pid)
+        except (psutil.Error, OSError):
+            self.usage = None
+        threading.Thread(target=self._stdout, daemon=True, name='worker-readiness').start()
+        threading.Thread(target=self._stderr, daemon=True, name='worker-logs').start()
+        try:
+            self.process.stdin.write(json.dumps(self.bootstrap) + '\n')
+            self.process.stdin.flush()
+            try:
+                message = self.ready.get(timeout=timeout)
+            except queue.Empty:
+                last = next((line for line in reversed(self.logs) if line.strip()), '')
+                cause = last if len(last) <= 200 else last[:197] + '...'
+                alive = 'still running' if self.process.poll() is None else f'exited with {self.process.returncode}'
+                raise RuntimeError(f'Worker was not ready after {timeout} seconds ({alive}). '
+                                   f'Last output: {cause or "none"}. Full log: {self.log_path}') from None
+            if (message.get('event') != 'ready' or message.get('protocol') != 1
+                    or message.get('adventure_id') != self.bootstrap['adventure_id']
+                    or message.get('generation') != self.generation
+                    or message.get('host') != '127.0.0.1'
+                    or type(message.get('port')) is not int or not 1 <= message['port'] <= 65535):
+                raise RuntimeError(message.get('error') or 'Invalid worker readiness response')
+            self.url = f"http://127.0.0.1:{message['port']}"
+            return self
+        except BaseException:
+            try:
+                self.stop(timeout=5)
+            except RuntimeError:
+                # stop() has already terminated the child. Reporting its shutdown
+                # deadline here would bury the reason the worker never came up.
+                log.warning('Worker for %s ignored the shutdown request after a failed start',
+                            self.bootstrap['adventure_id'])
+            raise
+
+    def _stdout(self):
+        while line := self.process.stdout.readline(16385):
+            if len(line) > 16384:
+                continue
+            try:
+                message = json.loads(line)
+                if isinstance(message, dict) and message.get('event') in {'ready', 'error'}:
+                    try:
+                        self.ready.put_nowait(message)
+                    except queue.Full:
+                        pass
+            except ValueError:
+                self.logs.append(line[-2000:].rstrip())
+        try:
+            self.ready.put_nowait({'event': 'error', 'error': 'Worker exited before becoming ready'})
+        except queue.Full:
+            pass
+
+    def _stderr(self):
+        while line := self.process.stderr.readline(4097):
+            self.logs.append(line[-4000:].rstrip())
+            if self.observer is not None:
+                try:
+                    self.observer(self.bootstrap['adventure_id'], line)
+                except Exception:  # noqa: BLE001
+                    pass
+            try:
+                self.log_path.parent.mkdir(parents=True, exist_ok=True)
+                if self.log_path.exists() and self.log_path.stat().st_size > 2 * 1024 * 1024:
+                    self.log_path.replace(self.log_path.with_suffix('.previous.log'))
+                with self.log_path.open('a') as output:
+                    output.write(line[-4000:])
+            except OSError:
+                pass
+
+    def request(self, method, path, data=None, timeout=20):
+        if not self.url or self.process.poll() is not None:
+            raise RuntimeError('Adventure worker is not running')
+        with httpx.Client(trust_env=False, timeout=timeout) as client:
+            response = client.request(method, self.url + path, json=data,
+                                      headers={'Authorization': 'Bearer ' + self.token})
+            if response.is_error:
+                try:
+                    detail = response.json().get('detail', response.text[:300])
+                except ValueError:
+                    detail = response.text[:300]
+                raise RuntimeError(str(detail))
+            return response.json()
+
+    def stop(self, timeout=50):
+        if self.process is None:
+            return
+        if self.process.poll() is None:
+            if self.url:
+                try:
+                    self.request('POST', '/internal/shutdown', {}, timeout=2)
+                except (OSError, RuntimeError, httpx.HTTPError):
+                    pass
+            if self.process.stdin:
+                try:
+                    self.process.stdin.close()
+                except OSError:
+                    pass
+            try:
+                self.process.wait(timeout=max(0.1, timeout))
+            except subprocess.TimeoutExpired:
+                self.process.terminate()
+                try:
+                    self.process.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    self.process.kill()
+                    self.process.wait(timeout=3)
+                raise RuntimeError('Worker exceeded the shutdown deadline. Its previous safe save was retained.')
+        if self.process.returncode not in (None, 0):
+            raise RuntimeError(f'Worker exited with code {self.process.returncode}. Inspect its diagnostics.')
+
+
+class Supervisor:
+    def __init__(self, registry, assets, public_url, child_factory=Child):
+        self.registry = registry
+        self.assets = assets
+        self.public_url = public_url.rstrip('/')
+        self.child_factory = child_factory
+        self.children = {}
+        self.guard = threading.RLock()
+        self.admission = threading.RLock()
+        self.locks = {}
+        self.retries = {}
+        self.setup_retries = {}   # aid -> (due time, automatic attempts made) after a failed data download
+        self.unhealthy_since = {}
+        self.notifications = None   # installed by the manager: adventure row -> worker notification settings
+        self.worker_output = None   # installed by the watchdog: aid, stderr line -> None
+        self.closed = threading.Event()
+        self.thread = None
+
+    def _lock(self, aid):
+        with self.guard:
+            return self.locks.setdefault(aid, threading.RLock())
+
+    def child(self, aid):
+        with self.guard:
+            child = self.children.get(aid)
+        if child is None or not child.url or child.process.poll() is not None:
+            raise RuntimeError('This adventure is stopped or still starting')
+        return child
+
+    def resources(self, aid):
+        with self.guard:
+            child = self.children.get(aid)
+        if child is None or child.process is None or child.process.poll() is not None:
+            return None
+        usage = getattr(child, 'usage', None)
+        reading = usage.sample() if usage is not None else None
+        return {**(reading or {}), **child.pace.sample()}
+
+    def start(self, aid, recovery=False):
+        with self.admission, self._lock(aid):
+            adventure = self.registry.adventure(aid)
+            if self.closed.is_set():
+                raise RuntimeError('PokeSim is shutting down')
+            if not recovery and adventure['desired_state'] != 'running':
+                return adventure
+            if adventure['archived']:
+                raise ValueError('Restore this adventure from the archive before starting')
+            with self.guard:
+                existing = self.children.get(aid)
+                if existing and existing.process and existing.process.poll() is None:
+                    return self.registry.update(aid, state='running' if existing.url else 'starting', error=None)
+                generation = identifier()
+                settings = {**adventure['settings'],
+                            **self.registry.setting('nickname_parts', {}),
+                            'speed': adventure['settings'].get('speed', 1),
+                            'rom_path': str(self.assets.rom_path(adventure['rom_id'])),
+                            'data_dir': str(self.registry.root / 'adventures' / aid),
+                            'game_data_dir': str(self.assets.game_data_dir),
+                            'public_url': self.public_url + f'/games/{aid}'}
+                settings.pop('auto_start', None)
+                bootstrap = dict(protocol=1, adventure_id=aid, generation=generation,
+                                 token=secrets.token_urlsafe(32), settings=settings, adventure_name=adventure['name'])
+                child = self.child_factory(bootstrap)
+                child.pace = ObservedSpeed()
+                child.observer = self.worker_output
+                self.children[aid] = child
+                self.registry.update(aid, state='starting', generation=generation, error=None)
+            try:
+                report = lambda message: self.registry.update(aid, summary={'setup': message})
+                if adventure['version'] in GEN2_VERSIONS:
+                    self.assets.prepare_gen2(adventure['version'], report)
+                elif adventure['version'] == 'yellow':
+                    self.assets.prepare(report, 'yellow')
+                else:
+                    self.assets.prepare(report)
+                self.assets.install_portraits(Path(settings['rom_path']).read_bytes())
+                child.start()
+                try:
+                    self.sync_notifications(aid, child)
+                    self.sync_nicknames(child)
+                except Exception:
+                    log.warning('Adventure %s will receive notification settings when it reconnects', aid)
+                self.setup_retries.pop(aid, None)
+                return self.registry.update(aid, state='recovering' if recovery else 'running', error=None)
+            except Exception as error:
+                with self.guard:
+                    self.children.pop(aid, None)
+                self.registry.update(aid, state='failed', error=str(error))
+                self.schedule_setup_retry(aid, error)
+                raise
+
+    def schedule_setup_retry(self, aid, error, manual=False):
+        """After a failed download, try again later a few times so a brief outage heals itself."""
+        if manual:
+            self.setup_retries.pop(aid, None)
+        if not isinstance(error, DataDownloadError):
+            self.setup_retries.pop(aid, None)
+            return
+        attempts = self.setup_retries.get(aid, (0, 0))[1]
+        if attempts < SETUP_RETRIES:
+            delay = SETUP_DELAYS[attempts]
+            self.setup_retries[aid] = (time.monotonic() + delay, attempts + 1)
+            try:
+                summary = {**(self.registry.adventure(aid).get('summary') or {}), 'next_retry': time.time() + delay}
+                self.registry.update(aid, summary=summary)
+            except KeyError:
+                pass
+        else:
+            self.setup_retries.pop(aid, None)
+
+    def run_setup_retries(self):
+        if not self.setup_retries:
+            return
+        now = time.monotonic()
+        for aid, (due, _) in list(self.setup_retries.items()):
+            if due > now or self.closed.is_set():
+                continue
+            try:
+                row = self.registry.adventure(aid)
+            except KeyError:
+                self.setup_retries.pop(aid, None)
+                continue
+            if row['state'] != 'failed' or row['desired_state'] != 'running' or row['archived']:
+                self.setup_retries.pop(aid, None)
+                continue
+            self.setup_retries[aid] = (float('inf'), self.setup_retries[aid][1])
+            try:
+                self.start(aid)
+            except Exception:
+                log.warning('Automatic retry of adventure %s data preparation did not succeed', aid)
+                if aid in self.setup_retries and self.setup_retries[aid][0] == float('inf'):
+                    self.setup_retries.pop(aid)
+
+    def stop(self, aid, preserve_desired=False):
+        with (nullcontext() if self.closed.is_set() else self.admission), self._lock(aid):
+            self.registry.adventure(aid)
+            if not preserve_desired:
+                self.registry.update(aid, desired_state='stopped')
+            with self.guard:
+                child = self.children.get(aid)
+            if child is None:
+                return self.registry.update(aid, state='stopped')
+            self.registry.update(aid, state='stopping')
+            try:
+                child.stop()
+            except Exception as error:
+                self.registry.update(aid, state='failed', error=str(error))
+                raise
+            finally:
+                with self.guard:
+                    self.children.pop(aid, None)
+            return self.registry.update(aid, state='stopped', error=None)
+
+    def push_speed(self, aid):
+        with self.admission:
+            with self.guard:
+                child = self.children.get(aid)
+            if child is None:
+                return False
+            try:
+                speed = self.registry.adventure(aid)['settings'].get('speed', 1)
+                self._apply_speed(child, speed)
+            except (RuntimeError, OSError, httpx.HTTPError):
+                log.warning('Adventure %s will receive its pace when it reconnects', aid)
+                return True
+            return False
+
+    @staticmethod
+    def _apply_speed(child, speed):
+        result = child.request('POST', '/internal/speed', {'speed': speed}, timeout=5)
+        if result.get('speed') != speed:
+            raise RuntimeError('Worker did not acknowledge the adventure pace')
+
+    def sync_speed(self, aid, child, actual):
+        with self.admission:
+            if self.closed.is_set() or self.children.get(aid) is not child:
+                return
+            speed = self.registry.adventure(aid)['settings'].get('speed', 1)
+            if actual != speed:
+                self._apply_speed(child, speed)
+
+    def push_palette(self, aid):
+        with self.admission:
+            with self.guard:
+                child = self.children.get(aid)
+            if child is None or self.registry.adventure(aid)['version'] in GEN2_VERSIONS:
+                return False
+            try:
+                value = self.registry.adventure(aid)['settings'].get('palette', 'original')
+                self._apply_palette(child, value)
+            except (RuntimeError, OSError, httpx.HTTPError):
+                log.warning('Adventure %s will receive its palette when it reconnects', aid)
+                return True
+            return False
+
+    @staticmethod
+    def _apply_palette(child, value):
+        result = child.request('POST', '/internal/palette', {'palette': value}, timeout=5)
+        if result.get('palette') != value:
+            raise RuntimeError('Worker did not acknowledge the adventure palette')
+
+    def sync_palette(self, aid, child, actual):
+        with self.admission:
+            if self.closed.is_set() or self.children.get(aid) is not child:
+                return
+            if actual is None:
+                return   # This worker reports no palette (Generation II), so there is nothing to apply.
+            value = self.registry.adventure(aid)['settings'].get('palette', 'original')
+            if actual != value:
+                self._apply_palette(child, value)
+
+    def push_ai_mode(self, aid):
+        with self.admission:
+            with self.guard:
+                child = self.children.get(aid)
+            if child is None:
+                return False
+            try:
+                value = self.registry.adventure(aid)['settings'].get('ai_mode', 'default')
+                result = child.request('POST', '/internal/ai_mode', {'ai_mode': value}, timeout=5)
+                if result.get('ai_mode') != value:
+                    raise RuntimeError('Worker did not acknowledge the AI player')
+            except (RuntimeError, OSError, httpx.HTTPError):
+                log.warning('Adventure %s will receive its AI player when it reconnects', aid)
+                return True
+            return False
+
+    def sync_ai_mode(self, aid, child, actual):
+        with self.admission:
+            if self.closed.is_set() or self.children.get(aid) is not child:
+                return
+            value = self.registry.adventure(aid)['settings'].get('ai_mode', 'default')
+            if actual != value:
+                result = child.request('POST', '/internal/ai_mode', {'ai_mode': value}, timeout=5)
+                if result.get('ai_mode') != value:
+                    raise RuntimeError('Worker did not acknowledge the AI player')
+
+    def sync_optional(self, aid, child, status):
+        """Apply settings that may lag behind. A refusal is reported on the setting and never judges health."""
+        errors = {}
+        for name, sync, actual in (('speed', self.sync_speed, status.get('speed')),
+                                   ('palette', self.sync_palette, status.get('palette')),
+                                   ('ai_mode', self.sync_ai_mode, status.get('ai_mode'))):
+            try:
+                sync(aid, child, actual)
+            except (RuntimeError, OSError, KeyError, httpx.HTTPError) as error:
+                errors[name] = str(error) or error.__class__.__name__
+        if errors != getattr(child, 'sync_errors', {}):
+            for name, message in errors.items():
+                log.warning('Adventure %s has not accepted its %s setting: %s', aid, name, message)
+            child.sync_errors = errors
+        return errors
+
+    def push_notifications(self):
+        """Apply the Library notification settings to running adventures without restarting them."""
+        with self.guard:
+            children = list(self.children.items())
+        pending = []
+        for aid, child in children:
+            try:
+                self.sync_notifications(aid, child)
+            except (RuntimeError, OSError, KeyError, httpx.HTTPError):
+                pending.append(aid)
+                log.warning('Adventure %s will receive notification settings when it reconnects', aid)
+        return pending
+
+    def sync_notifications(self, aid, child):
+        if self.notifications is None or not child.url:
+            return
+        settings = self.notifications(self.registry.adventure(aid))
+        fingerprint = digest(settings)
+        if getattr(child, 'notified', None) != fingerprint:
+            child.request('POST', '/internal/notifications', settings, timeout=5)
+            child.notified = fingerprint
+
+    def sync_nicknames(self, child):
+        if not child.url:
+            return
+        parts = self.registry.setting('nickname_parts', {'nickname_prefixes': [], 'nickname_suffixes': []})
+        fingerprint = digest(parts)
+        if getattr(child, 'nickname_settings', None) != fingerprint:
+            child.request('POST', '/internal/nicknames', parts, timeout=5)
+            child.nickname_settings = fingerprint
+
+    def update_nicknames(self):
+        with self.guard:
+            children = list(self.children.items())
+        pending = []
+        for aid, child in children:
+            try:
+                self.sync_nicknames(child)
+                if not child.url:
+                    pending.append(aid)
+            except (RuntimeError, OSError, httpx.HTTPError):
+                pending.append(aid)
+        return pending
+
+    def run_monitor(self):
+        self.thread = threading.Thread(target=self._monitor, name='adventure-supervisor', daemon=True)
+        self.thread.start()
+
+    def _monitor(self):
+        while not self.closed.wait(3):
+            self.run_setup_retries()
+            with self.guard:
+                children = list(self.children.items())
+            for aid, child in children:
+                if self.closed.is_set():
+                    break
+                if child.process is None or not child.url:
+                    continue
+                if child.process.poll() is not None:
+                    with self.admission, self._lock(aid):
+                        with self.guard:
+                            if self.children.get(aid) is not child:
+                                continue
+                            self.children.pop(aid)
+                        adventure = self.registry.update(aid, state='failed', error='Adventure worker exited unexpectedly')
+                    recent = [t for t in self.retries.get(aid, []) if time.monotonic() - t < 300]
+                    self.retries[aid] = recent
+                    unresolved = any(aid in row['plan'].get('participants', []) for row in self.registry.transactions(True))
+                    if adventure['desired_state'] == 'running' and len(recent) < 3 and not unresolved:
+                        recent.append(time.monotonic())
+                        try:
+                            self.start(aid)
+                        except Exception:
+                            log.exception('Could not restart adventure %s', aid)
+                    continue
+                try:
+                    child.request('GET', '/healthz', timeout=3)
+                    status = child.request('GET', '/api/summary', timeout=3)
+                    child.pace.observe(status.get('performance'))
+                    child.watch = (time.time(), status)
+                    settings_errors = self.sync_optional(aid, child, status)
+                    self.unhealthy_since.pop(aid, None)
+                    game = status.get('game') or {}
+                    # A worker pauses itself for a cable trade or for manual play, so the library
+                    # says which rather than showing Running beside a speed that reads Paused.
+                    trading = bool(self.registry.transactions(True, adventure_id=aid))
+                    summary = {'activity': game.get('map_name') or 'Adventure in progress',
+                               'paused': status.get('paused', False),
+                               'manual_mode': bool(status.get('manual_mode')), 'trading': trading,
+                               'ai_mode': status.get('ai_mode', 'default'),
+                               'frame': status.get('frame'), 'playtime': game.get('playtime'),
+                               'last_response': time.time(), 'league_rewards': status.get('league_rewards'),
+                               'stalled': (status.get('progress') or {}).get('state') == 'stalled',
+                               'settings_errors': settings_errors}
+                    current = self.registry.adventure(aid)
+                    summary['recent_activity'] = recent_activity(
+                        current.get('summary') or {}, summary['activity'], summary['last_response'])
+                    if current['generation'] == child.generation:
+                        self.registry.update(aid, summary=summary)
+                    try:
+                        self.sync_notifications(aid, child)
+                        self.sync_nicknames(child)
+                    except (RuntimeError, OSError, KeyError, httpx.HTTPError):
+                        # Undelivered notification settings never make a healthy game look stale.
+                        log.warning('Adventure %s has not accepted its notification settings yet', aid)
+                except (RuntimeError, OSError, httpx.HTTPError):
+                    since = self.unhealthy_since.setdefault(aid, time.monotonic())
+                    log.warning('Adventure %s is not responding', aid)
+                    if time.monotonic() - since >= 60 and not self.closed.is_set():
+                        with self.admission, self._lock(aid):
+                            if self.children.get(aid) is child:
+                                self.registry.update(aid, state='failed', error='Adventure health remained stale for 60 seconds')
+                                try:
+                                    child.stop(timeout=5)
+                                except RuntimeError:
+                                    pass
+                        self.unhealthy_since.pop(aid, None)
+
+    def close(self):
+        self.closed.set()
+        self.assets.cancelled.set()
+        with self.guard:
+            ids = list(self.children)
+        errors = []
+        def stop_one(aid):
+            try:
+                self.stop(aid, preserve_desired=True)
+            except Exception as error:
+                errors.append(str(error))
+        threads = [threading.Thread(target=stop_one, args=(aid,)) for aid in ids]
+        for thread in threads:
+            thread.start()
+        deadline = time.monotonic() + 58
+        for thread in threads:
+            thread.join(max(0, deadline - time.monotonic()))
+        if self.thread:
+            self.thread.join(timeout=4)
+        if any(thread.is_alive() for thread in threads):
+            raise RuntimeError('Some workers have not stopped. Application ownership is retained.')
+        if self.thread and self.thread.is_alive():
+            raise RuntimeError('Supervisor is still finishing a request. Application ownership is retained.')
+        return errors

@@ -1,0 +1,226 @@
+"""Opponent preparation and party development using observable team capabilities."""
+from dataclasses import asdict
+from collections import Counter
+
+from .battle import HEALING, damage, effectiveness, ranked_moves
+from ..duplicates import quality, spare_entries
+from ..game_data import current_variant
+from ..ram import BOX_CAPACITY, PartyMon
+from ..strategy_data import ITEMS, MAPS, MOVES, SPECIES, event_set
+
+OPPONENTS = {
+    1: ('Brock', 'ONIX', 14), 2: ('Misty', 'STARMIE', 21),
+    4: ('Lt. Surge', 'RAICHU', 24), 8: ('Erika', 'VILEPLUME', 29),
+    16: ('Koga', 'WEEZING', 43), 32: ('Sabrina', 'ALAKAZAM', 43),
+    64: ('Blaine', 'ARCANINE', 47), 128: ('Giovanni', 'RHYDON', 50),
+    256: ('Lorelei', 'LAPRAS', 56), 257: ('Bruno', 'MACHAMP', 58),
+    258: ('Agatha', 'GENGAR', 60), 259: ('Lance', 'DRAGONITE', 62),
+    260: ('the Champion', 'ALAKAZAM', 59),
+}
+if current_variant() == 'yellow':
+    # Yellow's leaders field the teams from the anime, from pret/pokeyellow parties.asm.
+    OPPONENTS.update({
+        1: ('Brock', 'ONIX', 12), 4: ('Lt. Surge', 'RAICHU', 28), 8: ('Erika', 'WEEPINBELL', 32),
+        16: ('Koga', 'VENOMOTH', 50), 32: ('Sabrina', 'ALAKAZAM', 50),
+        64: ('Blaine', 'ARCANINE', 54), 128: ('Giovanni', 'RHYDON', 55),
+    })
+
+
+# Yellow's Pikachu follows the player and loses friendship when it leaves the party,
+# so it never becomes a deposit candidate there.
+STAYS_IN_PARTY = ({sid for sid, data in SPECIES.items() if data.get('name') == 'PIKACHU'}
+                  if current_variant() == 'yellow' else set())
+
+
+def stays_in_party(s, mon):
+    """Whether this party member is Yellow's starter Pikachu, which never leaves the party.
+
+    pret/pokeyellow IsStarterPikachuAliveInOurParty treats a Pikachu as the starter only when its
+    trainer ID is the player's. A Pikachu traded in from another game can go to the PC like any
+    other Pokémon. Kept for every Pikachu, a party of HM holders and a traded Pikachu had no one
+    left to deposit, so every trade into Yellow failed to make room.
+    """
+    species = mon['species'] if isinstance(mon, dict) else mon.species
+    if species not in STAYS_IN_PARTY:
+        return False
+    player = getattr(s, 'player_id', None)
+    trainer = mon.get('trainer_id') if isinstance(mon, dict) else getattr(mon, 'trainer_id', None)
+    return player is None or trainer is None or trainer == player
+
+
+def potential(species, teammates=()):
+    data = SPECIES.get(species, {})
+    covered = {t for p in teammates for t in p.types}
+    return sum(data.get('stats', [0])) + 70 * len(set(data.get('types', [])) - covered)
+
+
+def storage_headroom(s):
+    """Free slots across every box."""
+    return sum(BOX_CAPACITY - count for count in s.box_counts)
+
+
+def spare_copies(s, protected=()):
+    """Boxed duplicates that can be given up, as (box, position, level).
+
+    Keep future potential, the strongest current partner, and rare finds. Party
+    members stay on the team and win exact ties. Species in `protected` are never offered.
+    """
+    return [(mon['box'], mon['position'], mon['level']) for mon in
+            spare_entries([asdict(mon) for mon in s.party], s.storage_entries(), protected)]
+
+
+_RELEASE = [None, None]
+
+
+def release_target(s, protected=(), reserved=()):
+    """Reduce the most numerous species first, keeping its best copy and all protections.
+
+    This ranks every stored copy and is asked on every step while storage is tight, so the
+    answer is kept until the party, the PC or the protections change. A copy the PC list
+    cannot reach is never offered, since the release menu would stop short of it every time.
+    """
+    reserved = frozenset(reserved) | frozenset(getattr(s, 'unlisted', ()))
+    key = (tuple(s.party), getattr(s, 'stored_details', None), getattr(s, 'stored_pokemon', None),
+           frozenset(protected), reserved)
+    try:
+        hash(key)
+    except TypeError:
+        return _release_target(s, protected, reserved)
+    if _RELEASE[0] != key:
+        _RELEASE[:] = [key, _release_target(s, protected, reserved)]
+    return _RELEASE[1]
+
+
+def _release_target(s, protected, reserved):
+    party = [asdict(mon) for mon in s.party]
+    stored = s.storage_entries()
+    counts = Counter(mon['species'] for mon in [*party, *stored])
+    spare = [mon for mon in spare_entries(party, stored, protected)
+             if (mon['box'], mon['position']) not in reserved]
+    if not spare:
+        return None
+    target = min(spare, key=lambda mon: (-counts[mon['species']], quality(mon), mon['box'], mon['position']))
+    return target['box'], target['position']
+
+
+def reserve_to_deposit(s, *, prefer_completed=False):
+    strongest = max(range(len(s.party)), key=lambda i: s.party[i].level, default=None)
+    candidates = [i for i, p in enumerate(s.party) if i != strongest and not stays_in_party(s, p)
+                  and not any(move in (15, 19, 57, 70, 148)
+                              and not any(move in other.moves for j, other in enumerate(s.party) if j != i)
+                              for move in p.moves)]
+    return min(candidates, key=lambda i: (not (prefer_completed and s.party[i].level >= 100),
+                                         s.party[i].level * 10 + potential(s.party[i].species))) if candidates else None
+
+
+def development_candidate(s, encounter_level):
+    if len(s.party) < 2:
+        return None
+    lead_level = max(p.level for p in s.party)
+    # Yellow's Pikachu cannot be boxed, so it is trained first. Battle switching covers a tougher opponent
+    # and shares the experience.
+    candidates = [i for i, p in enumerate(s.party)
+                  if p.level < lead_level * 0.8 and stays_in_party(s, p) and p.level + 12 >= encounter_level
+                  and p.hp >= p.max_hp * 0.85 and not p.status
+                  and any(MOVES.get(m, {}).get('power') and pp for m, pp in zip(p.moves, p.pp))]
+    if candidates:
+        return candidates[0]
+    candidates = [i for i, p in enumerate(s.party)
+                  if p.level < lead_level * 0.8 and p.level + 2 >= encounter_level
+                  and p.hp >= p.max_hp * 0.85 and not p.status
+                  and any(MOVES.get(m, {}).get('power') and pp for m, pp in zip(p.moves, p.pp))]
+    return max(candidates, key=lambda i: potential(s.party[i].species, [p for j, p in enumerate(s.party) if i != j])) if candidates else None
+
+
+def next_opponent(s):
+    for bit in (1, 2, 4, 8, 16, 32, 64, 128):
+        if not s.badges & bit:
+            return bit
+    flags = ('EVENT_BEAT_LORELEIS_ROOM_TRAINER_0', 'EVENT_BEAT_BRUNOS_ROOM_TRAINER_0',
+             'EVENT_BEAT_AGATHAS_ROOM_TRAINER_0', 'EVENT_BEAT_LANCE')
+    rooms = ('LORELEIS_ROOM', 'BRUNOS_ROOM', 'AGATHAS_ROOM', 'LANCES_ROOM', 'CHAMPIONS_ROOM')
+    current = next((i for i, room in enumerate(rooms) if MAPS[room] == s.map), None)
+    if current is None:
+        return 256
+    return min(260, 256 + current + int(current < 4 and event_set(s.event_flags, flags[current])))
+
+
+_READINESS = {}
+
+
+def readiness(s, bit=None):
+    """Estimate the party against the next opponent, or the one ``bit`` names.
+
+    The planner asks several times per step, so each answer is kept until the opponent, the
+    party or the bag changes. Callers get their own copy, as a fresh estimate would give them.
+    """
+    bit = bit or next_opponent(s)
+    tables = (id(SPECIES), id(MOVES), id(OPPONENTS), id(HEALING), id(ITEMS), damage, ranked_moves, effectiveness)
+    if _READINESS.get('tables') != tables or len(_READINESS) > 64:
+        _READINESS.clear()
+        _READINESS['tables'] = tables
+    key = (bit, tuple(s.party), tuple(s.items))
+    try:
+        hash(key)
+    except TypeError:
+        # Stand-in party members that cannot be hashed are estimated every time.
+        return _readiness(s, bit)
+    result = _READINESS.get(key)
+    if result is None:
+        result = _READINESS[key] = _readiness(s, bit)
+    return {**result, 'members': [dict(row) for row in result['members']], 'concerns': list(result['concerns'])}
+
+
+def _readiness(s, bit):
+    name, species_name, level = OPPONENTS[bit]
+    sid, data = next(((sid, data) for sid, data in SPECIES.items() if data.get('name') == species_name))
+    hp, attack, defense, speed, special = data['stats']
+    stat = lambda base: (2 * (base + 8) * level // 100) + 5
+    max_hp = stat(hp) + level + 5
+    enemy_moves = list(data.get('initial_moves', [33]))
+    for learned_level, mid in data.get('learnset', []):
+        if learned_level <= level and mid not in enemy_moves:
+            enemy_moves.append(mid)
+            enemy_moves = enemy_moves[-4:]
+    special_moves = {1: 'BIDE', 2: 'BUBBLEBEAM', 4: 'THUNDERBOLT', 8: 'MEGA_DRAIN',
+                     16: 'TOXIC', 32: 'PSYWAVE', 64: 'FIRE_BLAST', 128: 'FISSURE',
+                     256: 'BLIZZARD', 257: 'FISSURE', 258: 'TOXIC', 259: 'BARRIER'}
+    special_move = next((mid for mid, move in MOVES.items() if move['name'] == special_moves.get(bit)), None)
+    if special_move:
+        enemy_moves = enemy_moves[:3] + [special_move]
+    enemy_moves = tuple(enemy_moves)
+    enemy = PartyMon(sid, max_hp, max_hp, level, name, types=tuple(data['types']), moves=enemy_moves,
+                     pp=(20,) * len(enemy_moves), attack=stat(attack), defense=stat(defense),
+                     speed=stat(speed), special=stat(special))
+    members = []
+    for i, p in enumerate(s.party):
+        moves = ranked_moves(p, enemy)
+        attack_damage = max((damage(p.moves[k], p, enemy) * MOVES[p.moves[k]]['accuracy'] / 100
+                             for _, k in moves), default=0)
+        incoming = max((damage(mid, enemy, p) * MOVES[mid]['accuracy'] / 100 for mid in enemy.moves), default=1)
+        turns = enemy.hp / max(1, attack_damage)
+        survival = p.hp / max(1, incoming)
+        score = min(100, round(100 * survival / max(1, turns + (p.speed < enemy.speed)))) if attack_damage and p.hp else 0
+        if p.status:
+            score //= 2
+        members.append({'index': i, 'name': p.nick or p.name, 'level': p.level, 'score': score,
+                        'coverage': any(effectiveness(MOVES[p.moves[k]]['type'], enemy.types) > 1 for _, k in moves),
+                        'pp': sum(pp for m, pp in zip(p.moves, p.pp) if MOVES.get(m, {}).get('power'))})
+    best = max(members, key=lambda row: row['score'], default=None)
+    healing = sum(qty for item, qty in s.items if item in HEALING)
+    revives = dict(s.items).get(ITEMS['REVIVE'], 0)
+    concerns = []
+    if not best or best['score'] < 75:
+        concerns.append('The strongest matchup still needs preparation')
+    if any(p.status or not p.hp for p in s.party):
+        concerns.append('Heal fainted partners or status conditions')
+    if best and best['pp'] < 8:
+        concerns.append('Restore attack PP before the next challenge')
+    if healing < (6 if bit >= 256 else 2):
+        concerns.append('Carry more healing items')
+    if bit >= 256 and revives < 2:
+        concerns.append('Bring Revives for the League')
+    return {'opponent': name, 'score': best['score'] if best else 0,
+            'lead': best['index'] if best else 0, 'members': members, 'concerns': concerns,
+            'status': 'Prepared' if not concerns else 'Preparing',
+            'note': 'Estimate against a representative opponent, not a win probability'}

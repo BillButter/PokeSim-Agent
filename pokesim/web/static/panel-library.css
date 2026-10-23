@@ -1,0 +1,922 @@
+/* ==========================================================================
+   PokeSim — "Bench Instrument", the library pages.
+
+   Loads after tokens.css and panel.css, and only on library.html (the manager's
+   library, stopped adventure, trading, notifications and settings views).
+   Everything here is built from panel.css primitives; nothing sets a colour,
+   size or space that is not a token.
+
+   Contents
+     1  page head, toolbar, notice
+     2  adventure cards
+     3  trading
+     4  forms and settings panels
+     5  dialogs
+     6  responsive
+   ========================================================================== */
+
+
+/* ==========================================================================
+   1  PAGE HEAD, TOOLBAR, NOTICE
+   ========================================================================== */
+
+.library-main,
+#workspace,
+[data-view] { display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; gap: var(--s5); min-width: 0; }
+.library-main { padding-top: var(--s6); }
+[data-view][hidden] { display: none; }
+
+/* Label, title, one line of why; an action sits on the right, level with the
+   title's baseline. */
+.page-head {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: var(--s4) var(--s6);
+  padding-bottom: var(--s5);
+  border-bottom: var(--hair) solid var(--rule);
+}
+.page-title { display: grid; gap: var(--s2); min-width: 0; flex: 1 1 420px; }
+.page-title h1 {
+  font: var(--f-title) / 1.1 var(--font-panel);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  overflow-wrap: anywhere;
+}
+.lede { max-width: 62ch; color: var(--ink-2); }
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--s2) var(--s5);
+  margin-top: calc(-1 * var(--s2));
+}
+
+.notice {
+  padding: var(--s3) var(--s4);
+  background: var(--panel);
+  border: var(--hair) solid var(--rule);
+  border-left: 3px solid var(--ok-lamp);
+  box-shadow: var(--key-inset);
+  font-size: 14px;
+}
+.notice.error { border-left-color: var(--crit-lamp); color: var(--crit); }
+.notice.attention { display: grid; gap: var(--s1); border-left-color: var(--warn-lamp); }
+.notice.attention[hidden] { display: none; }
+.attention ul { display: grid; gap: var(--s1); padding: 0; margin: 0; list-style: none; overflow-wrap: anywhere; }
+
+.back-link a {
+  font: var(--f-micro) / 1.4 var(--font-mono);
+  letter-spacing: var(--track-micro);
+  text-transform: uppercase;
+}
+
+.empty-state { display: grid; justify-items: start; gap: var(--s3); padding: var(--s6); }
+.empty-state h2 { font: var(--f-read) / 1.2 var(--font-panel); letter-spacing: 0.04em; text-transform: uppercase; }
+.empty-state p:not(.legend) { max-width: 60ch; color: var(--ink-2); }
+.empty-state .key { margin-top: var(--s2); }
+
+
+/* ==========================================================================
+   2  ADVENTURE CARDS
+   Banner, screen, who and what, keys. The screen is the cartridge's own
+   160x144 frame at a whole-number scale, never stretched to the card.
+   ========================================================================== */
+
+.adventure-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr));
+  gap: var(--s5);
+}
+.adventure-grid--single { grid-template-columns: minmax(0, 420px); }
+
+.adventure-card {
+  container: card / inline-size;
+  display: grid;
+  grid-template-rows: auto auto 1fr auto;
+  min-width: 0;
+  background: var(--panel);
+  border: var(--hair) solid var(--rule);
+  box-shadow: var(--key-inset);
+}
+
+.card-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s3);
+  min-height: 44px;
+  padding: 0 var(--s4);
+  border-bottom: var(--hair) solid var(--rule-faint);
+}
+.state-pill { display: inline-flex; align-items: center; gap: var(--s2); }
+.state-pill .lamp { width: 8px; height: 8px; }
+
+.card-screen {
+  display: grid;
+  place-items: center;
+  height: calc(144px + 2 * var(--s4));
+  padding: var(--s4);
+  background: var(--bezel);
+  border-bottom: var(--hair) solid var(--rule);
+  overflow: hidden;
+}
+.card-screen img {
+  width: 160px;
+  height: 144px;
+  max-width: none;
+  image-rendering: pixelated;
+  background: #0E100C;
+}
+/* A stopped adventure keeps the same screen box, so titles and buttons
+   line up across a row whatever each adventure is doing. */
+.card-screen--off { background: var(--well); box-shadow: var(--well-inset); }
+.card-screen--off .micro { color: var(--ink-3); }
+/* 2x as soon as the card is 320px across, which takes in a phone and a
+   three-across desktop row. Under 354px the bezel gives up its side margin. */
+@container card (min-width: 320px) {
+  .card-screen { height: calc(288px + 2 * var(--s4)); padding-inline: 0; }
+  .card-screen img { width: 320px; height: 288px; }
+}
+
+.card-body { display: grid; align-content: start; gap: var(--s2); padding: var(--s4); min-width: 0; }
+.card-body h2 {
+  font: var(--f-read) / 1.1 var(--font-panel);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  overflow-wrap: anywhere;
+}
+.card-activity { color: var(--ink-2); font-size: 14px; line-height: 1.5; }
+.card-stat { color: var(--ink-2); }
+.card-note { font-size: 13px; color: var(--ink-3); }
+.card-error {
+  padding: var(--s2) var(--s3);
+  border-left: 3px solid var(--crit-lamp);
+  background: var(--panel-2);
+  color: var(--crit);
+  font-size: 13px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+/* The page for an adventure that is not running: a status, a reason, one big key. */
+.status-wrap { display: grid; grid-template-columns: minmax(0, 560px); }
+.adventure-status {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+  background: var(--panel);
+  border: var(--hair) solid var(--rule);
+  box-shadow: var(--key-inset);
+}
+.status-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s4); padding: var(--s5); min-width: 0; }
+.status-headline {
+  font: var(--f-title) / 1.1 var(--font-panel);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  overflow-wrap: anywhere;
+}
+.status-detail { color: var(--ink-2); font-size: 14px; }
+.status-technical { font-size: 13px; color: var(--ink-3); }
+.status-technical p { margin-top: var(--s2); overflow-wrap: anywhere; font-family: var(--font-mono); }
+.status-actions { display: grid; }
+.key--large { min-height: 56px; font-size: 1.1em; }
+.status-links { display: flex; min-width: 0; flex-wrap: wrap; gap: var(--s3); }
+.status-links .key { text-decoration: none; white-space: normal; text-align: center; max-width: 100%; }
+.stopped-missing { padding: var(--s5); background: var(--panel); border: var(--hair) solid var(--rule); }
+
+/* One main key, then settings and a More menu for everything else. */
+.card-actions { display: grid }
+.card-actions { gap: var(--s2) }
+.card-actions { padding: var(--s4) }
+.card-actions { border-top: var(--hair) solid var(--rule-faint) }
+.card-actions { background: var(--panel-2) }
+.card-open { display: grid }
+.card-open { grid-template-columns: minmax(0, 1fr) 44px auto }
+.card-open { gap: var(--s2) }
+.card-actions .key { min-height: 44px }
+.card-actions button.key { padding: 0 var(--s3) }
+.card-actions .card-settings { padding: 0 }
+/* "Open adventure" holds one line in a narrow card: the tracking comes in
+   first, then the size, and on the smallest phones it takes a row of its own. */
+@container card (max-width: 400px) {
+  .card-open .key--primary { padding-inline: var(--s2); letter-spacing: 0.02em; }
+}
+@container card (max-width: 360px) {
+  .card-open .key--primary { padding-inline: var(--s1); font-size: 14px; letter-spacing: 0; }
+}
+@container card (max-width: 330px) {
+  .card-open { grid-template-columns: 44px minmax(0, 1fr); }
+  .card-open .key--primary { grid-column: 1 / -1; }
+  .card-more-toggle { width: 100%; }
+}
+.card-more { position: relative }
+.card-more-toggle { height: 100% }
+.card-more-toggle[aria-expanded="true"] { background: var(--well); box-shadow: var(--well-inset) }
+.card-menu {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + var(--s1));
+  z-index: 5;
+  display: grid;
+  min-width: 200px;
+  padding: var(--s1) 0;
+  background: var(--panel);
+  border: var(--hair) solid var(--rule);
+  box-shadow: var(--key-inset), 4px 4px 0 var(--bevel-lo);
+}
+.card-menu[hidden] { display: none }
+.menu-item {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 var(--s4);
+  background: none;
+  border: 0;
+  font: 15px / 1.2 var(--font-text);
+  text-align: left;
+  color: var(--ink);
+  text-decoration: none;
+  cursor: pointer;
+}
+.menu-item:hover, .menu-item:focus-visible { background: var(--panel-2); text-decoration: none }
+.menu-item:focus-visible { outline-offset: -3px }
+.menu-item:disabled { color: var(--ink-3); cursor: not-allowed }
+.menu-item--danger { color: var(--crit); border-top: var(--hair) solid var(--rule-faint) }
+.card-settings svg { flex-shrink: 0 }
+
+
+
+/* ==========================================================================
+   3  TRADING
+   ========================================================================== */
+
+.status-strip {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--s2) var(--s5);
+  padding: var(--s3) var(--s4);
+}
+.status-strip .micro { display: inline-flex; align-items: center; gap: var(--s2); color: var(--ink); }
+.status-strip p { font-size: 14px; color: var(--ink-2); }
+
+.block { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s3); min-width: 0; }
+.block > .column-head { position: static; margin-bottom: 0; }
+
+.exchanges { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 560px), 1fr)); gap: var(--s3); color: var(--ink-2); }
+.exchanges > p { grid-column: 1 / -1; }
+.exchange {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  background: var(--panel);
+  border: var(--hair) solid var(--rule);
+  box-shadow: var(--key-inset);
+}
+.exchange-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s3);
+  padding: var(--s2) var(--s4);
+  border-bottom: var(--hair) solid var(--rule-faint);
+  background: var(--panel-2);
+}
+.exchange-completed .state-pill { color: var(--ok); border-color: var(--ok); }
+.exchange-pair {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: stretch;
+}
+.exchange-arrow {
+  display: grid;
+  place-items: center;
+  padding: 0 var(--s3);
+  border-inline: var(--hair) solid var(--rule-faint);
+  font: var(--f-read) / 1 var(--font-text);
+  color: var(--ink-3);
+}
+.exchange-partner { display: grid; align-content: start; gap: var(--s3); padding: var(--s4); min-width: 0; }
+.exchange-partner h3 { font: 600 14px / 1.3 var(--font-text); overflow-wrap: anywhere; }
+/* When the half-card is too narrow for a name beside the portrait, the text
+   drops under it instead of breaking the name mid-word. */
+.exchange-pokemon { display: flex; flex-wrap: wrap; align-items: center; align-content: start; gap: var(--s3) var(--s4); min-width: 0; }
+.plate--trade { flex: none; width: calc(var(--sprite-2x) + 2px); height: calc(var(--sprite-2x) + 2px); }
+.exchange-placeholder .plate-num { color: var(--ink-3); }
+.exchange-text { display: grid; flex: 1 1 140px; gap: var(--s1); min-width: 0; }
+.exchange-text strong {
+  font: var(--f-legend) / 1.2 var(--font-panel);
+  letter-spacing: var(--track-legend);
+  text-transform: uppercase;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.exchange-nickname { font-size: 13px; color: var(--ink-2); }
+.exchange-evolution { font: var(--f-micro) / 1.4 var(--font-mono); letter-spacing: 0.04em; color: var(--signal); }
+.exchange-failed { display: block; padding: var(--s3) var(--s4) 0; font-weight: 600; color: var(--ink); }
+.exchange-reason { padding: var(--s2) var(--s4) var(--s4); font-size: 14px; color: var(--ink-2); }
+
+.disclosure details > summary {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  min-height: 48px;
+  padding: 0 var(--s4);
+  cursor: pointer;
+  list-style: none;
+  font: var(--f-label) / 1 var(--font-mono);
+  letter-spacing: var(--track-micro);
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+.disclosure details > summary::-webkit-details-marker { display: none; }
+.disclosure details > summary::before { content: "\25B6"; font: 8px / 1 var(--font-panel); color: var(--ink-3); }
+.disclosure details[open] > summary::before { transform: rotate(90deg); }
+.disclosure details[open] > summary { border-bottom: var(--hair) solid var(--rule-faint); }
+.disclosure #trade-failures { padding: var(--s4); }
+
+
+/* ==========================================================================
+   4  FORMS AND SETTINGS PANELS
+   ========================================================================== */
+
+/* Every Settings panel spans the page, one per row. Inside, the explanation
+   reads on the left and its controls sit on the right; on a phone they stack. */
+.settings-panel { min-width: 0; }
+.settings-row {
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 300px);
+  align-items: center;
+  column-gap: var(--s6);
+}
+.settings-copy { display: grid; gap: var(--s2); min-width: 0; max-width: 72ch; }
+.settings-copy p { overflow-wrap: break-word; hyphens: manual; }
+.settings-copy > p:not(.note) { color: var(--ink-2); }
+.settings-copy > p:empty { display: none; }
+.settings-controls { display: grid; gap: var(--s2); width: 100%; min-width: 0; }
+.settings-controls .field { gap: var(--s1); }
+.settings-controls input[type="file"] { width: 100%; min-width: 0; }
+.settings-wide { grid-column: 1 / -1; display: grid; gap: var(--s3); width: 100%; min-width: 0; }
+.settings-wide:not(:has(> :not(:empty):not([hidden]))) { display: none; }
+@media (max-width: 860px) {
+  .settings-row { grid-template-columns: minmax(0, 1fr); row-gap: var(--s4); }
+}
+/* One key size for every Settings action. */
+.settings-actions .key,
+.settings-controls .key { min-height: 44px; padding-inline: var(--s4); font-size: 14px; line-height: 1.25; white-space: normal; text-align: center; }
+.settings-controls .key { width: 100%; }
+.panel-head {
+  display: flex;
+  align-items: center;
+  min-height: 48px;
+  padding: 0 var(--s4);
+  border-bottom: var(--hair) solid var(--rule-faint);
+  background: var(--panel-2);
+}
+.panel-body { display: grid; align-content: start; justify-items: start; gap: var(--s4); padding: var(--s4); min-width: 0; }
+.panel-body > p:not(.note):not(.dialog-feedback):not(.notify-subscribe) { color: var(--ink-2); }
+.panel-body > *,
+.stack > * { max-width: 100%; }
+.stack { display: grid; justify-items: start; gap: var(--s4); width: 100%; }
+.note { font-size: 13px; line-height: 1.5; color: var(--ink-3); }
+
+/* A labelled input: the silkscreen label above a recessed well. */
+.field { display: grid; gap: var(--s1); width: 100%; }
+.field textarea,
+.field input:not([type="checkbox"]),
+.field select {
+  width: 100%;
+  min-height: 40px;
+  padding: var(--s2) var(--s3);
+  background: var(--well);
+  border: var(--hair) solid var(--rule);
+  border-radius: 0;
+  box-shadow: var(--well-inset);
+  color: var(--ink);
+  font: 15px / 1.3 var(--font-text);
+}
+.field input[type="file"] { padding: var(--s1) var(--s2); font-size: 14px; }
+.field input[type="file"]::file-selector-button {
+  margin-right: var(--s3);
+  min-height: 30px;
+  padding: 0 var(--s3);
+  background: var(--panel-2);
+  border: var(--hair) solid var(--rule);
+  border-radius: 0;
+  box-shadow: var(--key-inset);
+  font: var(--f-label) / 1 var(--font-mono);
+  letter-spacing: var(--track-micro);
+  text-transform: uppercase;
+  color: var(--ink);
+  cursor: pointer;
+}
+.field input::placeholder { color: var(--ink-3); opacity: 1; }
+.field input:disabled,
+.field select {
+  appearance: none;
+  padding-right: var(--s6);
+  cursor: pointer;
+  /* The shared solid caret, drawn as two half triangles because a select
+     cannot carry a pseudo-element. */
+  background-image: linear-gradient(to bottom left, var(--ink-3) 50%, transparent 50%),
+                    linear-gradient(to bottom right, var(--ink-3) 50%, transparent 50%);
+  background-size: 4px 4px;
+  background-position: right 18px center, right 14px center;
+  background-repeat: no-repeat;
+}
+.field select:disabled { opacity: 0.6; cursor: not-allowed; }
+
+/* A checkbox row. The box is square and hard-edged like everything else.
+   On a phone the row is a full-size touch target, so short labels get centred. */
+@media (max-width: 640px) {
+  .check, .inline-label { min-height: 44px; align-content: center; }
+}
+.check,
+.inline-label {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  align-items: start;
+  gap: var(--s3);
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--ink);
+  cursor: pointer;
+}
+.check input,
+.inline-label input {
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  margin: 0;
+  background: var(--well);
+  border: var(--hair) solid var(--rule);
+  box-shadow: var(--well-inset);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+.check input:checked::after,
+.inline-label input:checked::after {
+  content: "";
+  width: 10px;
+  height: 10px;
+  background: var(--signal);
+}
+.check input:disabled,
+.inline-label input:disabled { opacity: 0.5; cursor: not-allowed; }
+.inline-label small { display: block; font-size: 13px; color: var(--ink-3); }
+.toolbar .check { align-items: center; }
+
+.notify-choices { display: grid; gap: var(--s3); width: 100%; }
+.notify-subscribe { font-size: 14px; overflow-wrap: anywhere; }
+.notify-subscribe:empty { display: none; }
+
+
+.form-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--s3);
+  margin-top: var(--s5);
+  padding-top: var(--s4);
+  border-top: var(--hair) solid var(--rule);
+}
+.form-result { font-size: 14px; color: var(--ink-2); }
+.dialog-feedback { font-size: 14px; color: var(--crit); }
+.dialog-feedback:empty { display: none; }
+
+
+/* ==========================================================================
+   5  DIALOGS
+   A sheet is a panel lifted off the chassis by a hard offset, like the
+   partner detail on the live page.
+   ========================================================================== */
+
+.sheet {
+  width: min(520px, calc(100% - 2 * var(--s4)));
+  max-height: calc(100vh - 2 * var(--s5));
+  padding: 0;
+  overscroll-behavior: contain;
+  background: var(--panel);
+  color: var(--ink);
+  border: var(--hair) solid var(--rule);
+  box-shadow: var(--key-inset), 6px 6px 0 var(--bevel-lo);
+}
+.sheet::backdrop { background: rgba(10, 12, 10, 0.55); }
+.sheet-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s3);
+  min-height: 56px;
+  padding: 0 var(--s2) 0 var(--s4);
+  background: var(--panel-2);
+  border-bottom: var(--hair) solid var(--rule);
+}
+.sheet-body { display: grid; gap: var(--s4); padding: var(--s4); }
+.sheet-foot {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  justify-content: flex-end;
+  padding: var(--s3) var(--s4);
+  background: var(--panel-2);
+  border-top: var(--hair) solid var(--rule);
+}
+.key--close { flex: none; width: 40px; padding: 0; font: 22px / 1 var(--font-text); }
+
+
+/* ==========================================================================
+   6  RESPONSIVE
+   The rail's own breakpoints live in panel.css. This page has four tabs, so
+   they stay in the display face down to 400px.
+   ========================================================================== */
+
+@media (max-width: 1100px) {
+  .library-main { padding-top: var(--s5); }
+}
+
+@media (max-width: 640px) {
+  .library-main { gap: var(--s4); padding-top: var(--s4); }
+  #workspace, [data-view] { gap: var(--s4); }
+  .page-head { padding-bottom: var(--s4); gap: var(--s4); }
+  .page-head > .key { width: 100%; min-height: 44px; }
+  .page-title h1 { font-size: var(--f-read); }
+  .lede { font-size: 14px; }
+  .adventure-grid { gap: var(--s4); }
+  .adventure-grid--single { grid-template-columns: minmax(0, 1fr); }
+  .status-wrap { grid-template-columns: minmax(0, 1fr); }
+  .status-body { padding: var(--s4); gap: var(--s3); }
+  .status-headline { font-size: var(--f-read); }
+  .status-links .key { flex: 1 1 100%; min-height: 44px; }
+  .empty-state { padding: var(--s4); }
+  .card-actions .key { min-height: 44px; }
+
+  .exchange-pair { grid-template-columns: minmax(0, 1fr); }
+  .exchange-arrow { padding: var(--s1) 0; border-inline: 0; border-block: var(--hair) solid var(--rule-faint); }
+  .form-actions .key { flex: 1 1 100%; }
+  /* Long key labels wrap rather than push a narrow panel sideways. */
+  .panel-body .key,
+  .sheet-body > .key,
+  .form-actions .key { width: 100%; min-height: 44px; padding-block: var(--s2); white-space: normal; text-align: center; line-height: 1.25; }
+  .sheet-body > .key { letter-spacing: 0.04em; }
+  .sheet-foot .key { width: 100%; min-height: 44px; }
+}
+
+@media (min-width: 401px) and (max-width: 640px) {
+  .library .rail nav a { font: var(--f-legend) / 1 var(--font-panel); letter-spacing: 0.04em; }
+}
+
+@media (forced-colors: active) {
+  .adventure-card, .exchange, .sheet, .check input, .inline-label input { border: 1px solid CanvasText; box-shadow: none; }
+  .check input:checked::after, .inline-label input:checked::after { background: Highlight; }
+}
+
+/* Session readings update in place without replacing the card or its controls. */
+.card-resources { display: grid }
+.card-resources { grid-template-columns: repeat(3, minmax(0, 1fr)) }
+.card-resources { gap: var(--s3) }
+.card-resources { padding-block: var(--s3) }
+.card-resources { border-block: var(--hair) solid var(--rule-faint) }
+.card-resources dt { font-size: 12px }
+.card-resources dt { color: var(--ink-2) }
+.card-resources dd { margin: var(--s1) 0 0 }
+.card-resources dd { font: 16px / 1.4 var(--font-mono) }
+.card-resources dd { font-variant-numeric: tabular-nums }
+.card-resources dd.is-pending { font: 12px / 1.8 var(--font-text) }
+.card-log { padding-top: var(--s2) }
+.card-log ol { list-style: none }
+.card-log ol { padding: 0 }
+.card-log ol { margin: var(--s2) 0 0 }
+.card-log li { display: grid }
+.card-log li { grid-template-columns: auto minmax(0, 1fr) }
+.card-log li { gap: var(--s3) }
+.card-log li { margin-top: var(--s1) }
+.card-log li { font-size: 13px }
+.card-log li { overflow-wrap: anywhere }
+.card-log time { color: var(--ink-2) }
+.card-log time { font-variant-numeric: tabular-nums }
+.card-actions .key { min-width: 0 }
+.card-actions .key { white-space: normal }
+.card-actions .key { text-align: center }
+.adventure-card { grid-template-columns: minmax(0, 1fr) }
+
+@media (max-width: 400px) {
+  .card-resources { gap: var(--s2) }
+  .card-resources dd { font-size: 14px }
+}
+
+.sheet-head h2 { min-width: 0 }
+.sheet-head h2 { overflow-wrap: anywhere }
+.sheet-foot .key { white-space: normal }
+.sheet-foot .key { line-height: 1.25 }
+.sheet-foot .key { padding-block: var(--s2) }
+
+.field textarea { resize: vertical; min-height: 6rem; }
+
+.nickname-actions { display: flex; flex-wrap: wrap; gap: var(--s2); }
+.nickname-actions .key { white-space: normal; }
+
+/* Keep the expanded creation form within narrow phone screens. */
+#create-dialog .sheet-body { grid-template-columns: minmax(0, 1fr) }
+#create-dialog .sheet-body > * { min-width: 0 }
+#create-dialog .sheet-body .key { white-space: normal }
+#create-dialog .sheet-body .key { overflow-wrap: anywhere }
+
+.notification-fields { display: grid }
+.notification-fields { gap: var(--s4) }
+.notification-fields { width: 100% }
+.notification-fields { align-items: start }
+#notify-form .form-result:empty { display: none }
+@media (min-width: 641px) {
+  .notification-fields { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)) }
+  #notify-categories { grid-template-columns: repeat(2, minmax(0, 1fr)) }
+  #notify-adventures { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)) }
+}
+
+.integration-list { display: grid }
+.integration-list { gap: var(--s4) }
+.integration-card { display: flex }
+.integration-card { flex-wrap: wrap }
+.integration-card { align-items: center }
+.integration-card { justify-content: space-between }
+.integration-card { gap: var(--s4) }
+.integration-card { padding: var(--s4) }
+.integration-card h2 { margin-block: var(--s2) }
+.integration-card h2 { overflow-wrap: anywhere }
+.integration-card > div:first-child { flex: 1 1 260px }
+.integration-card-actions { display: flex }
+.integration-card-actions { flex-wrap: wrap }
+.integration-card-actions { gap: var(--s2) }
+.integration-card .form-result { flex-basis: 100% }
+.integration-card .form-result:empty { display: none }
+#integration-dialog { width: min(820px, calc(100% - 2 * var(--s4))) }
+#notify-form { gap: 0 }
+#notify-form .sheet-body > * { min-width: 0 }
+#notify-form .key { white-space: normal }
+#notify-form .key { overflow-wrap: anywhere }
+.integration-provider, .integration-subscriptions, .integration-credentials { display: grid }
+.integration-provider, .integration-subscriptions, .integration-credentials { gap: var(--s3) }
+.integration-provider { justify-items: start }
+.integration-provider[hidden], .integration-subscriptions[hidden] { display: none }
+.integration-subscriptions { padding-top: var(--s4) }
+.integration-subscriptions { border-top: var(--hair) solid var(--rule) }
+.integration-credentials:has(.note:empty):has(button[hidden] + button[hidden]) { display: none }
+.integration-actions { gap: var(--s2) }
+.integration-actions { flex-wrap: wrap }
+@media (max-width: 640px) {
+  .integration-actions > .key { flex: 1 1 auto }
+  .integration-card-actions { width: 100% }
+  .integration-card-actions > .key { flex: 1 }
+}
+
+@media (max-width: 640px) {
+  .integration-actions > .key:first-child { flex-basis: 100% }
+  .integration-actions > .key:not(:first-child) { flex: 1 1 0 }
+  .integration-actions > .key:not(:first-child) { font: 14px / 1.4 var(--font-text) }
+  .integration-actions > .key:not(:first-child) { min-height: 44px }
+}
+
+/* Nickname choices stay in the editor, leaving Settings compact. */
+#nickname-dialog { width: min(940px, calc(100vw - 24px)) }
+.nickname-fields { display: grid }
+.nickname-fields { grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr)) }
+.nickname-fields { gap: var(--s3) }
+.nickname-fields > * { min-width: 0 }
+.nickname-fields textarea { width: 100% }
+.nickname-fields textarea { box-sizing: border-box }
+.nickname-builtins details, .nickname-exclusions { border-top: 1px solid var(--rule-faint) }
+.nickname-builtins summary, .nickname-exclusions summary { padding-block: var(--s3) }
+.nickname-builtins summary, .nickname-exclusions summary { cursor: pointer }
+.nickname-choices { display: grid }
+.nickname-choices { gap: var(--s2) }
+.nickname-choices { padding-bottom: var(--s3) }
+.nickname-choices .check { font-size: 13px }
+.backup-row { display: flex }
+.backup-row { flex-wrap: wrap }
+.backup-row { align-items: center }
+.backup-row { justify-content: space-between }
+.backup-row { gap: var(--s3) }
+.backup-row { padding-block: var(--s3) }
+.backup-row { border-top: var(--hair) solid var(--rule-faint) }
+.backup-row strong { font-size: 14px }
+.backup-row p { margin: 0 }
+
+.backups { width: 100% }
+#nickname-form .sheet-foot { gap: var(--s2) }
+#nickname-form .sheet-foot { flex-wrap: wrap }
+.nickname-choices { grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)) }
+.nickname-choices { max-height: 320px }
+.nickname-choices { overflow-y: auto }
+.nickname-choices { align-content: start }
+@media (max-width: 640px) {
+  #nickname-form .sheet-foot { display: grid }
+  #nickname-form .sheet-foot { grid-template-columns: minmax(0, 1fr) }
+  #nickname-form .sheet-foot .key { font: 14px / 1.4 var(--font-text) }
+  #nickname-form .sheet-foot .key { min-width: 0 }
+}
+.nickname-builtins h3 { line-height: 1.3 }
+.nickname-builtins h3 { margin-bottom: var(--s2) }
+
+
+/* Backup actions share the same keys and stay together as the panel narrows. */
+.settings-actions { display: grid }
+.settings-actions { grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)) }
+.settings-actions { gap: var(--s2) }
+.settings-actions { width: 100% }
+.settings-actions .key { min-height: 44px }
+.settings-actions .key { font-size: 14px }
+.settings-actions .key { padding-inline: var(--s2) }
+.settings-actions .key { white-space: normal }
+.settings-actions .key { line-height: 1.25 }
+.backup-row-actions { display: grid }
+.backup-row-actions { grid-template-columns: repeat(3, minmax(0, 1fr)) }
+.backup-row-actions { gap: var(--s2) }
+.backup-row-actions { min-width: min(100%, 330px) }
+.backup-row-actions { max-width: 100% }
+.backup-row-actions .key { min-height: 44px }
+.backup-row-actions .key { padding-inline: var(--s2) }
+.backup-row-actions .key { font-size: 14px }
+.backup-row-actions .key { white-space: normal }
+.backup-row-actions .key { line-height: 1.25 }
+.backup-row-actions .key { text-align: center }
+@media (max-width: 640px) {
+  .backup-row-actions { width: 100% }
+  .backup-row-actions .key { font-size: 14px }
+  .backup-row-actions .key { padding-inline: var(--s2) }
+}
+
+.backup-pagination { display: flex }
+.backup-pagination { align-items: center }
+.backup-pagination { justify-content: space-between }
+.backup-pagination { gap: var(--s2) }
+.backup-pagination { width: 100% }
+.backup-pagination[hidden] { display: none }
+.backup-pagination .key { min-height: 44px }
+.backup-pagination .key { font-size: 12px }
+.backup-pagination .key { padding-inline: var(--s2) }
+#backup-summary:empty { display: none }
+#backup-delete-dialog .sheet-foot { flex-wrap: wrap }
+@media (max-width: 640px) {
+  .backup-row-actions { grid-template-columns: repeat(2, minmax(0, 1fr)) }
+  .backup-row-actions .key--danger { grid-column: 1 / -1 }
+  .backup-pagination .key { width: auto }
+  #backup-delete-dialog .sheet-foot .key { font-size: 14px }
+}
+
+#backup-delete-dialog .sheet-foot { gap: var(--s2) }
+
+
+.portrait-settings-body { display: grid }
+.portrait-settings-body { grid-template-columns: minmax(0, 1fr) auto }
+.portrait-settings-body { gap: var(--s5) }
+.portrait-settings-body { align-items: center }
+.portrait-preview { display: grid }
+.portrait-preview { grid-template-columns: repeat(3, minmax(0, 1fr)) }
+.portrait-preview { width: 304px }
+.portrait-preview { max-width: 100% }
+.portrait-preview { gap: var(--s2) }
+.portrait-preview .plate { width: 100% }
+.portrait-preview .plate { height: 96px }
+#portrait-progress { width: 100% }
+#portrait-progress { accent-color: var(--signal) }
+#portrait-feedback:empty { display: none }
+#portrait-feedback.is-error { color: var(--crit) }
+@media (max-width: 860px) {
+  .portrait-settings-body { grid-template-columns: minmax(0, 1fr) }
+  .portrait-preview .plate { height: 80px }
+}
+
+/* Artwork keys keep their own width rather than stretching across the panel. */
+.portrait-settings .settings-actions,
+.item-artwork-settings .settings-actions { display: flex }
+.portrait-settings .settings-actions,
+.item-artwork-settings .settings-actions { flex-wrap: wrap }
+.portrait-settings .settings-actions .key,
+.item-artwork-settings .settings-actions .key { max-width: 100% }
+
+.portrait-preview-caption { grid-column: 1 / -1 }
+.portrait-preview-caption { text-align: center }
+.portrait-preview-caption { margin: 0 }
+
+
+/* ==========================================================================
+   GAME CARTRIDGES
+   One slot per game in Settings, and the game cards in New adventure.
+   ========================================================================== */
+
+[data-slot="red"], [data-version="red"] { --cart: #B8332A; }
+[data-slot="blue"], [data-version="blue"] { --cart: #2F5FA8; }
+[data-slot="yellow"], [data-version="yellow"] { --cart: #D9A915; }
+[data-slot="gold"], [data-version="gold"] { --cart: #B08A2E; }
+[data-slot="silver"], [data-version="silver"] { --cart: #8C949C; }
+[data-slot="crystal"], [data-version="crystal"] { --cart: #4AA3B5; }
+/* Six slots, so the shelf is always whole rows: six, three, two or one. */
+.cartridge-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: var(--s3);
+  width: 100%;
+}
+@media (max-width: 1100px) { .cartridge-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 640px) { .cartridge-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 400px) { .cartridge-grid { grid-template-columns: minmax(0, 1fr); } }
+.cartridge-slot {
+  display: grid;
+  /* Art, title and details, then the message, then the keys pinned to the bottom. */
+  grid-template-rows: auto 1fr auto auto;
+  gap: var(--s2);
+  min-width: 0;
+  container-type: inline-size;
+  padding: var(--s3);
+  background: var(--panel-2);
+  border: var(--hair) solid var(--rule-faint);
+  box-shadow: var(--key-inset);
+}
+.cartridge-slot[data-state="empty"] { border-style: dashed; border-color: var(--rule); background: var(--panel); }
+.cartridge-slot[data-state="coming"] { border-style: dashed; background: var(--panel); color: var(--ink-3); }
+.cartridge-slot.is-dragging { outline: 2px dashed var(--signal); outline-offset: 2px; background: var(--wash); }
+.cartridge-slot.is-target { outline: 2px solid var(--focus); outline-offset: 2px; }
+/* A cartridge silhouette with the game's colour on its label. */
+.cartridge-face {
+  position: relative;
+  height: 56px;
+  background: var(--well);
+  clip-path: polygon(0 0, 82% 0, 100% 18%, 100% 100%, 0 100%);
+}
+.cartridge-face span {
+  position: absolute;
+  inset: 12px 14px 10px;
+  background: var(--cart, var(--cell-off));
+  box-shadow: var(--well-inset);
+}
+.cartridge-slot[data-state="empty"] .cartridge-face span,
+.cartridge-slot[data-state="coming"] .cartridge-face span { background: repeating-linear-gradient(135deg, var(--cell-off) 0 4px, transparent 4px 8px); }
+.cartridge-info { display: grid; align-content: start; gap: var(--s1); min-width: 0; }
+.cartridge-name { font: var(--f-legend) / 1.25 var(--font-panel); letter-spacing: 0.04em; text-transform: uppercase; overflow-wrap: anywhere; }
+/* Six across, some names take two lines; every name gets two so the facts
+   below line up from slot to slot. */
+@media (min-width: 1101px) {
+  .cartridge-name { min-height: 2.5em; }
+}
+.cartridge-state { color: var(--ink-2); }
+.cartridge-slot[data-state="installed"] .cartridge-state { color: var(--ok); }
+.cartridge-facts { display: grid; gap: 2px; margin: 0; font-size: 13px; }
+.cartridge-facts div { display: flex; justify-content: space-between; gap: var(--s2); min-width: 0; }
+.cartridge-facts dt { color: var(--ink-3); }
+.cartridge-facts dd { margin: 0; text-align: right; overflow-wrap: anywhere; }
+.cartridge-facts code { font: 12px / 1.4 var(--font-mono); }
+.cartridge-info .note { margin: 0; font-size: 13px; }
+.cartridge-actions { display: grid; grid-template-columns: minmax(0, 1fr); grid-auto-rows: 44px; gap: var(--s2); }
+.cartridge-actions .key, .cartridge-action-spacer { height: 44px; min-height: 44px; min-width: 0; margin: 0; }
+.cartridge-actions .key { padding-inline: var(--s1); font-size: 13px; letter-spacing: 0.04em; white-space: nowrap; }
+@container (min-width: 280px) {
+  .cartridge-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+.cartridge-feedback { align-self: end; margin: 0; font-size: 13px; color: var(--ink-2); overflow-wrap: anywhere; }
+.cartridge-feedback:empty { visibility: hidden; }
+.cartridge-feedback.is-error { color: var(--crit); }
+
+.empty-block { display: grid; grid-template-columns: minmax(0, 1fr); justify-items: start; gap: var(--s3); min-width: 0; }
+.empty-block > * { max-width: 100%; overflow-wrap: break-word; }
+
+.game-picker { display: grid; gap: var(--s2); min-width: 0; margin: 0; padding: 0; border: 0; }
+.game-picker legend { padding: 0; margin-bottom: var(--s2); }
+.game-choices { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 130px), 1fr)); grid-auto-rows: 1fr; gap: var(--s2); }
+.game-card {
+  position: relative;
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  min-height: 64px;
+  padding: var(--s2) var(--s2) var(--s2) calc(var(--s2) + 6px);
+  background: var(--panel-2);
+  border: var(--hair) solid var(--rule-faint);
+  box-shadow: var(--key-inset);
+  cursor: pointer;
+}
+.game-card::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 6px; background: var(--cart, var(--cell-off)); }
+.game-card input { position: absolute; opacity: 0; pointer-events: none; }
+.game-card:has(input:checked) { border-color: var(--signal); outline: 2px solid var(--signal); outline-offset: -1px; background: var(--wash); }
+.game-card:has(input:focus-visible) { outline: 2px solid var(--focus); outline-offset: 2px; }
+.game-card:has(input:checked) .game-card-meta::after { content: " · Selected"; color: var(--signal); }
+.game-card-name { font: 14px / 1.3 var(--font-text); font-weight: 600; overflow-wrap: anywhere; }
+.game-card-meta { font: var(--f-micro) / 1.4 var(--font-mono); color: var(--ink-3); }
+.game-card.is-missing { cursor: default; border-style: dashed; background: var(--panel); box-shadow: none; color: var(--ink-3); }
+.game-card.is-missing::before { background: repeating-linear-gradient(180deg, var(--cell-off) 0 4px, transparent 4px 8px); }
+.game-card.is-missing .game-card-name { font-weight: 400; }
+.game-card-add { font-size: 13px; }
+a.game-card-add { color: var(--link); text-decoration: underline; }
+.create-needs-cartridge { display: grid; grid-template-columns: minmax(0, 1fr); justify-items: start; gap: var(--s2); padding: var(--s3); border: var(--hair) dashed var(--rule); }
+.create-needs-cartridge[hidden] { display: none; }
+#create-form.needs-cartridge .game-picker { display: none; }
+#create-form.needs-cartridge .sheet-body > :not(.create-needs-cartridge):not(.game-picker) { display: none; }
+
+
+/* A failed cancel says why above the line of waiting trades. */
+.exchange-note { font-size: 14px; color: var(--crit); }

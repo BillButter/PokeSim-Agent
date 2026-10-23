@@ -1,0 +1,132 @@
+"""Read what is on screen by decoding the game's shadow tilemap as text.
+
+In Gen 1 the font tiles are placed by character code, so decoding the 20x18 tile map with the
+text charset gives the visible text of menus and dialogue — enough to know which menu is open.
+"""
+from __future__ import annotations
+
+import re
+
+from .ram import W_TILEMAP as W_TILEMAP
+from pokesim_core.textmatch import ScreenText
+from pokesim_core.gen1_ui import read_screen
+
+W_CURRENT_MENU_ITEM = 0xCC26
+W_TOP_MENU_Y = 0xCC24
+W_TOP_MENU_X = 0xCC25
+W_LIST_SCROLL_OFFSET = 0xCC36
+W_MAX_MENU_ITEM = 0xCC28
+W_PLAYER_MON_NUMBER = 0xCC2F      # index in party of the Pokémon currently out
+W_ENEMY_HP = 0xCFE6               # 2 bytes
+W_ENEMY_MAX_HP = 0xCFF4           # 2 bytes
+W_OPTIONS = 0xD355                # bits 0-2 text speed (1 fast/3 mid/5 slow), bit 6 battle style, bit 7 animations off
+
+
+def rows(mem) -> list[str]:
+    return read_screen(mem, raw_text=True)["rows"]
+
+
+# The PP Up prompt says "PP" as a word. A nickname such as DAMPPILOT must not match it.
+PP_PROMPT = re.compile(r'(?<![A-Z])PP(?![A-Z])')
+
+
+class Screen:
+    __slots__ = ("rows", "text", "cursor", "menu_index", "scroll", "top_x", "top_y")
+
+    def __init__(self, mem):
+        screen = read_screen(mem, raw_text=True)
+        self.rows = screen["rows"]
+        self.text = ScreenText("\n".join(self.rows))
+        self.menu_index = screen["menu_index"]
+        self.scroll = screen["scroll"]
+        self.top_x = mem[W_TOP_MENU_X]
+        self.top_y = mem[W_TOP_MENU_Y]
+        self.cursor = screen["cursor"]
+
+    def kind(self, snapshot) -> str:
+        """Classify visible input states. A filled cursor confirms a menu is accepting input."""
+        text = ScreenText(self.text.upper())
+        if self.naming:
+            return "naming"
+        if self.cursor:
+            x, y = self.cursor
+            if "1F" in text and "2F" in text and ("3F" in text or "B4F" in text):
+                return "elevator"
+            if "FRESH WATER" in text and "SODA POP" in text and "LEMONADE" in text:
+                return "vending"
+            if any(row.strip("? ") == "HEAL" for row in self.rows) and "CANCEL" in text:
+                return "heal"
+            if self.yes_no:
+                return "yes_no"
+            if "BOX 1" in text and "BOX12" in text:
+                return "change_box"
+            if 'PORYGON' in text and ('DRATINI' in text or 'PINSIR' in text) and 'NO THANKS' in text:
+                return 'prize'
+            if self.battle_menu:
+                return "battle"
+            if "BALL" in text and "BAIT" in text and "ROCK" in text and "RUN" in text:
+                return "safari"
+            if "SWITCH" in text and "STATS" in text:
+                return "party_action"
+            if "USE" in text and "TOSS" in text:
+                return "item_action"
+            if ("FORGET" in text or "FORGOTTEN" in text or "HM TECHNIQUES" in text) and x == 5 and 8 <= y <= 11:
+                return "learn_move"
+            if x == 5 and 8 <= y <= 11 and not snapshot.in_battle and PP_PROMPT.search(text) and "TECHNIQUE" in text:
+                return "item_moves"
+            if x == 5 and 13 <= y <= 16 and snapshot.in_battle:
+                return "moves"
+            if x == 0 and y <= 11 and snapshot.party and not self.pause_menu:
+                return "party"
+            if self.shop:
+                return "shop"
+            if self.pause_menu:
+                return "pause"
+            if "LOG OFF" in text and "PC" in text:
+                return "pc_root"
+            if self.pc:
+                return "pc"
+            if self.list_menu or (self.top_x == 5 and self.top_y == 4 and x == 5 and 4 <= y <= 8):
+                return "list"
+        if "HOW MANY" in text:
+            return "quantity"
+        if snapshot.textbox or (snapshot.in_battle and not self.cursor):
+            return "dialogue"
+        return "overworld"
+
+    def has(self, *words: str) -> bool:
+        return all(w in self.text for w in words)
+
+    @property
+    def battle_menu(self) -> bool:
+        return "FIGHT" in self.rows[14] and "RUN" in self.rows[16]
+
+    @property
+    def list_menu(self) -> bool:
+        """An item / Pokémon list with a CANCEL entry (bag, party, PC, shop)."""
+        return "CANCEL" in self.text and not self.battle_menu
+
+    @property
+    def yes_no(self) -> bool:
+        column = self.cursor[0] + 1 if self.cursor else 0
+        labels = [row[column:].strip("? ").upper() for row in self.rows]
+        if self.cursor and labels[self.cursor[1]] not in ("YES", "NO"):
+            return False
+        return "YES" in labels and "NO" in labels
+
+    @property
+    def shop(self) -> bool:
+        return self.has("BUY", "SELL")
+
+    @property
+    def pc(self) -> bool:
+        return self.has("WITHDRAW") or self.has("DEPOSIT")
+
+    @property
+    def naming(self) -> bool:
+        # The cursor replaces a space between letters as it crosses the first row.
+        return any(r[2:19:2] in ("ABCDEFGHI", "abcdefghi") for r in self.rows)
+
+    @property
+    def pause_menu(self) -> bool:
+        return self.has("EXIT") and (self.has("ITEM") or self.has("SAVE") or self.has("OPTION"))

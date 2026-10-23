@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en" data-theme="auto">
+<head>
+<meta charset="utf-8">
+<meta name="pokesim-base" content="${game_base}">
+<meta name="pokesim-adventure" content="${adventure_id}">
+<meta name="pokesim-sprites" content="${sprite_version}">
+<script src="${game_base}/static/routes.js"></script>
+<script src="${game_base}/static/types.js?v=glow-1"></script>
+<script src="${game_base}/static/panel.js?v=panel-4"></script>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#DDDAD0" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#20241F" media="(prefers-color-scheme: dark)">
+<meta name="description" content="Trade settings, automatic matches and previous exchanges for your adventure.">
+<title>Partners between adventures. · pokesim</title>
+<link rel="icon" href="${game_base}/static/favicon.svg" type="image/svg+xml">
+<link rel="preload" href="${game_base}/static/fonts/pokesim-panel.woff2?v=2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="${game_base}/static/tokens.css?v=panel-1">
+<link rel="stylesheet" href="${game_base}/static/panel.css?v=pass2-1">
+<link rel="stylesheet" href="${game_base}/static/types.css?v=glow-2">
+<link rel="stylesheet" href="${game_base}/static/mon-grid.css?v=locks-1">
+<link rel="stylesheet" href="${game_base}/static/panel-trading.css?v=pass2-1">
+<link rel="alternate" type="application/atom+xml" title="pokesim events" href="${game_base}/feed.xml">
+</head>
+<body data-page="trading">
+<a class="skip-link" href="#main">Skip to trading.</a>
+
+<header class="rail">
+<div class="shell rail-inner">
+<a class="brandplate" href="${brand_href}" aria-label="${brand_label}" title="${brand_label}"><span class="mark" aria-hidden="true"></span><span><span class="wordmark">PokeSim</span><span class="model" id="app-version">${app_version}</span></span></a>
+${library_nav}<nav aria-label="Main navigation"><a href="${game_base}/">Live</a><a href="${game_base}/pokedex">Pokédex</a><a href="${game_base}/pc">PC</a><a href="${game_base}/trading" aria-current="page">Trading</a><a href="${game_base}/journal">Journal</a><a href="${game_base}/stats">Stats</a></nav>
+<span class="connection" id="connection"><i class="lamp" aria-hidden="true"></i><span id="status">Connecting</span></span>
+</div>
+</header>
+
+<main id="main" class="shell">
+<header class="identity page-head">
+<div class="who"><p class="micro">Link cable</p><h1>Trading</h1><p class="page-lede">See possible matches and let the adventures handle the exchange. Lock a Pokémon on the PC page to keep it.</p></div>
+</header>
+
+<section class="trade-overview" aria-label="Automatic trading status">
+<div class="trade-overview-read"><p class="micro"><i class="lamp" id="trade-lamp" aria-hidden="true"></i>Automatic trading</p><h2 class="headline" id="trade-status">Connecting…</h2><p class="body" id="trade-activity">Checking on the other adventure.</p></div>
+</section>
+<p id="trade-connection-note" class="trade-notice" role="status" hidden></p>
+
+<section id="trade-content" class="trade-content trade-section" aria-live="polite"><p class="empty-note">Opening the trading room…</p></section>
+</main>
+
+<footer class="plate-foot">
+<div class="shell">
+<p>A small window into a very big adventure.</p>
+<div class="theme" role="group" aria-label="Colour theme"><button data-theme-choice="light" aria-pressed="false">Light</button><button data-theme-choice="auto" aria-pressed="false">Auto</button><button data-theme-choice="dark" aria-pressed="false">Dark</button></div>
+<div class="links"><a href="${game_base}/feed.xml">Atom feed</a><a href="https://github.com/afk-sapien/PokeSim" target="_blank" rel="noreferrer">GitHub</a></div>
+</div>
+</footer>
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+<script src="${game_base}/static/trade-ui.js?v=one-page-1"></script>
+<script src="${game_base}/static/trading.js?v=one-page-1"></script>
+</body>
+</html>

@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en" data-theme="auto">
+<head>
+<meta charset="utf-8">
+<meta name="pokesim-base" content="${game_base}">
+<meta name="pokesim-adventure" content="${adventure_id}">
+<meta name="pokesim-sprites" content="${sprite_version}">
+<meta name="pokesim-dex-total" content="${dex_total}">
+<script src="${game_base}/static/routes.js"></script>
+<script src="${game_base}/static/panel.js?v=panel-4"></script>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#DDDAD0" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#20241F" media="(prefers-color-scheme: dark)">
+<meta name="description" content="Your collection, your travels, and the strength built along the way.">
+<title>Adventure stats. · pokesim</title>
+<link rel="icon" href="${game_base}/static/favicon.svg" type="image/svg+xml">
+<link rel="preload" href="${game_base}/static/fonts/pokesim-panel.woff2?v=2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="${game_base}/static/tokens.css?v=panel-1">
+<link rel="stylesheet" href="${game_base}/static/panel.css?v=pass2-1">
+<link rel="stylesheet" href="${game_base}/static/panel-journal.css?v=pass2-1">
+<link rel="alternate" type="application/atom+xml" title="pokesim events" href="${game_base}/feed.xml">
+</head>
+<body data-page="stats">
+<a class="skip-link" href="#main">Skip to adventure stats.</a>
+
+<header class="rail">
+<div class="shell rail-inner">
+<a class="brandplate" href="${brand_href}" aria-label="${brand_label}" title="${brand_label}"><span class="mark" aria-hidden="true"></span><span><span class="wordmark">PokeSim</span><span class="model" id="app-version">${app_version}</span></span></a>
+${library_nav}<nav aria-label="Main navigation"><a href="${game_base}/">Live</a><a href="${game_base}/pokedex">Pokédex</a><a href="${game_base}/pc">PC</a><a href="${game_base}/trading">Trading</a><a href="${game_base}/journal">Journal</a><a href="${game_base}/stats" aria-current="page">Stats</a></nav>
+<span class="connection" id="connection"><i class="lamp" aria-hidden="true"></i><span id="status">Connecting</span></span>
+</div>
+</header>
+
+<main id="main" class="shell">
+<header class="identity page-head">
+<div class="who"><p class="micro">Adventure records</p><h1>Adventure stats</h1><p class="lede">Your collection, your travels, and the strength built along the way.</p></div>
+</header>
+
+<nav class="journal-pages" aria-label="Stats pages"><a href="${game_base}/stats" aria-current="page">Overview</a><a href="${game_base}/stats/pokemon">Pokémon</a><a href="${game_base}/stats/items">Items</a></nav>
+
+<section class="statistics-section" aria-labelledby="collection-records-heading">
+<div class="column-head"><h2 class="legend legend--ink" id="collection-records-heading">Overview</h2></div>
+<div class="collection-records stats-overview progress-panel">
+<div><span class="micro">Playtime</span><strong class="readout" id="stats-playtime">Loading</strong><span class="note">Simulated hours, excluding pauses</span></div>
+<div><span class="micro">League wins</span><strong class="readout" id="stats-league">Loading</strong><span class="note">Elite Four and Champion runs</span></div>
+<div><span class="micro">Pokémon held</span><strong class="readout" id="stats-held">Loading</strong><span class="note">Party and every PC box</span></div>
+<div><span class="micro" id="stats-caught-label">Catches tracked</span><strong class="readout" id="stats-caught">Loading</strong><span class="note" id="stats-caught-note"></span></div>
+<div><span class="micro">Perfect finds</span><strong class="readout" id="stats-perfect">Loading</strong><span class="note" id="stats-perfect-note"></span></div>
+<div><span class="micro" id="stats-shiny-label">Shinies acquired</span><strong class="readout" id="stats-shiny-acquired">Loading</strong><span class="note" id="stats-shiny-note">Tracked catches and custom gifts</span></div>
+</div>
+<p class="note" id="stats-wild-dv-note" hidden>Wild grass and cave encounters cannot be shiny or perfect in Red, Blue and Yellow. Fishing, gifts and trades can.</p>
+</section>
+
+<section class="statistics-section" aria-labelledby="milestone-heading">
+<div class="column-head"><h2 class="legend legend--ink" id="milestone-heading">Milestones</h2><span class="micro">Simulated playtime</span></div>
+<div class="progress-panel" id="milestone-list"></div>
+<p class="note">First recorded dates are the earliest evidence available. Unknown times are never estimated.</p>
+</section>
+<section class="statistics-section" aria-labelledby="recent-heading">
+<div class="column-head"><h2 class="legend legend--ink" id="recent-heading">Recent progress</h2><label class="stats-period"><span class="vh">Recent progress period</span><select id="recent-period"><option value="day">Last 24 hours</option><option value="week">Last 7 days</option></select></label></div>
+<div class="progress-panel stats-recent" id="recent-list"></div><p class="note" id="recent-note"></p>
+</section>
+<section class="statistics-section" aria-labelledby="highlights-heading">
+<div class="column-head"><h2 class="legend legend--ink" id="highlights-heading">Collection highlights</h2><span class="micro">Currently held</span></div>
+<div class="stats-highlights" id="stats-highlights"></div>
+</section>
+<section class="statistics-section" id="collection-details" aria-labelledby="collection-details-heading">
+<div class="column-head"><h2 class="legend legend--ink" id="collection-details-heading">Collection details</h2></div>
+<div class="collection-records progress-panel">
+<div><span class="micro">Shinies seen</span><strong class="readout" id="stats-shiny-seen">Loading</strong><span class="note">Wild encounters tracked</span></div>
+<div id="stats-shiny-held-cell"><span class="micro">Shinies held</span><strong class="readout" id="stats-shiny-held">Loading</strong><span class="note">Currently in the party and PC</span></div>
+<div><span class="micro">Perfect Pokémon held</span><strong class="readout" id="stats-perfect-held">Loading</strong><span class="note">Currently in the party and PC</span></div>
+</div></section>
+<section class="statistics-section" id="activity-details" aria-labelledby="activity-heading">
+<div class="column-head"><h2 class="legend legend--ink" id="activity-heading">Activity</h2></div>
+<div class="progress-panel stats-activity" id="activity-list"></div><p class="note" id="activity-note"></p>
+</section>
+<section class="statistics-section progress" id="road" aria-labelledby="road-heading" hidden>
+<div class="column-head"><h2 class="legend legend--ink" id="road-heading">Collection and League history</h2><span class="micro" id="road-span"></span></div>
+<div class="progress-panel" id="road-charts"></div>
+</section>
+
+<p class="note" id="statistics-status" role="status">Opening adventure stats…</p>
+<p class="micro" id="statistics-window"></p>
+<div id="statistics-charts"></div>
+<section class="statistics-section" id="event-returns" hidden aria-labelledby="event-returns-heading"><div class="column-head"><h2 class="legend legend--ink" id="event-returns-heading">Return visits &amp; gifts</h2><span class="micro" id="event-return-summary"></span></div><div class="return-grid" id="event-return-list"></div></section>
+<section class="statistics-section" id="marathon-records" aria-labelledby="marathon-heading"${marathon_hidden}>
+<div class="column-head"><h2 class="legend legend--ink" id="marathon-heading">Kanto Marathon</h2><span class="micro">Game time</span></div>
+<div class="progress-panel marathon-records">
+<div><span class="micro">Personal best</span><strong class="readout" id="marathon-best">No finish yet</strong></div>
+<div><span class="micro">Current attempt</span><strong class="readout" id="marathon-current">Not racing</strong><span class="note" id="marathon-checkpoints"></span></div>
+<div><span class="micro">Last attempt</span><strong class="readout" id="marathon-last">No attempts yet</strong><span class="note" id="marathon-result"></span></div>
+</div>
+</section>
+</main>
+
+<footer class="plate-foot">
+<div class="shell">
+<p>A small window into a very big adventure.</p>
+<div class="theme" role="group" aria-label="Colour theme"><button data-theme-choice="light" aria-pressed="false">Light</button><button data-theme-choice="auto" aria-pressed="false">Auto</button><button data-theme-choice="dark" aria-pressed="false">Dark</button></div>
+<div class="links"><a href="${game_base}/feed.xml">Atom feed</a><a href="https://github.com/afk-sapien/PokeSim" target="_blank" rel="noreferrer">GitHub</a></div>
+</div>
+</footer>
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+<script src="${game_base}/static/app.js?v=pass2-1"></script>
+<script src="${game_base}/static/progress.js?v=2"></script>
+<script src="${game_base}/static/statistics.js?v=return-cards-1"></script>
+</body>
+</html>

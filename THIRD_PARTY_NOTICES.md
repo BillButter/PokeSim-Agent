@@ -1,48 +1,33 @@
-# Third-party notices
+Licensing and distribution boundary
 
-PokeSim Agent is an unofficial fan project. It is not affiliated with or
-endorsed by Nintendo, Creatures Inc., GAME FREAK inc., or The Pokémon Company.
-Pokémon and related names are trademarks of their respective owners.
+Original pokesim code, generators, documentation, and the neutral default portrait are licensed under the MIT License in LICENSE. This does not grant rights to Pokémon ROMs, graphics, names, or third-party source content. The project is unofficial and unaffiliated with their rights holders.
 
-This repository contains **no ROMs, saves, sprites, or extracted game artwork**.
-Users are responsible for supplying ROMs they are legally entitled to use and
-for any redistribution of generated or extracted content.
+Release wheels, source archives, and container images do not include the previously bundled sprite PNGs or generated game datasets. Setup generates a local dataset from a verified archive or user-supplied checkout of [pret/pokered](https://github.com/pret/pokered) at revision `a1a22aaf84d1675bcdbaeb194592379d586d838e`. Every output records its source revision, generator version, schema, and checksums. First-time setup can download the pinned reference archive after a user adds a ROM. Prepared adventures run offline. Users are responsible for supplying content they are entitled to use and for any redistribution of generated content.
 
-## PokeSim
+The previously bundled images came from [PokéAPI/sprites](https://github.com/PokeAPI/sprites/blob/master/LICENCE.txt). Its notice identifies The Pokémon Company as the image copyright holder alongside a CC0 repository statement. Those files have been removed from the current release tree. By default, portraits are extracted locally from the supplied ROM, with a geometric placeholder if unavailable. Settings also offers an explicit optional download of the 151 colored Red/Blue portraits from PokéAPI at revision `bfb75391935310368065096fa08c51e8970bc43e`. Those PNGs and the upstream license notice are stored only in the user data directory. They are not bundled in PokeSim releases or mirrored by this project. This option does not grant rights to the underlying artwork. Users can also supply a local portrait pack in their data directory.
 
-This project is a fork of [PokeSim](https://github.com/afk-sapien/PokeSim),
-Copyright (c) 2026 AFK Sapien, licensed under the MIT License. The original
-license text is retained in [LICENSE](LICENSE).
+Generation II setup uses pinned [pret/pokegold](https://github.com/pret/pokegold/tree/62388c7204e5d13aa05b4231e220b6760584d1b5) and [pret/pokecrystal](https://github.com/pret/pokecrystal/tree/5beda23ffa505f62e1dad7e3d7c214d1737b3358) references. The generator verifies the reference archives and the SHA-256 of each symbol file, fetched at a separately pinned revision, and records the source revisions and bundle checksums. Generated datasets, reference sources and symbol files remain local user content. The 251 portraits for each supported cartridge are decoded locally from the owner-supplied ROM and are not bundled in releases.
 
-The fork reimplements the runtime around FastAPI and PyBoy and adds the vision
-agent. No bundled PokeSim ROM datasets or sprite packs are included.
+This public repository starts from a reviewed current-source snapshot. It contains no imported development history, bundled game datasets, sprite packs, ROMs, or saves.
 
-## PyBoy
+PokeSim 0.5.0 runs games on PyBoy RS, a Rust port of PyBoy 2.7.0, installed through PokeSim Core, which is MIT licensed. PokeSim Core and PyBoy RS are installed from GitHub release files, not from PyPI. PyBoy RS is distributed under GNU LGPL version 3 and retains upstream attribution to PyBoy. The original LGPL text and the incorporated GPL text are retained under `licenses/`. The image includes the exact PyBoy RS source archive at `/usr/share/pokesim/sources/pyboy-rs-<version>.tar.gz`, a source manifest, all discovered installed Python dependency notices, and the original application source under `/usr/share/pokesim/source`. The Python extension module is dynamically imported and can be replaced with a compatible modified build. See the dependency modification instructions in `docs/licensing.md`. PokeSim 0.4.x releases used PyBoy 2.7.0 itself and shipped its source archive instead.
 
-Real-ROM emulation uses [PyBoy](https://github.com/Baekalfen/PyBoy), an
-optional dependency installed from PyPI through the `emulator` extra or the
-Docker image. PyBoy is distributed under the GNU Lesser General Public License
-version 3 (LGPL-3.0); the upstream project and license text are available at
-the link above. PyBoy is used as a dynamically imported Python package and can
-be replaced with a compatible modified build. The Docker build does not vendor
-or modify PyBoy source.
+Other Python dependencies retain their own licenses. The image records their installed names, versions, license metadata, and notice paths in `/usr/share/pokesim/python-dependencies.json`. Native components and Debian packages retain their installed notices under `/usr/share/doc`. The OCI license label summarizes the application and emulator licenses. It is not an exhaustive license expression for every OS and transitive dependency.
 
-## Generation I reference data
+The browser test suite vendors [axe-core](https://github.com/dequelabs/axe-core) 4.10.3 under `tests/browser/vendor/axe-core`, with its Mozilla Public License 2.0 text and third-party notices beside it. It runs only in tests and is never part of the application.
 
-`app/gen1_data.py` contains species-index names and map names derived from the
-[pret/pokered](https://github.com/pret/pokered) disassembly project. The tables
-are used only to label values read from a user-supplied ROM. See the pret
-project for its license and attribution terms.
+Sources:
 
-## Python dependencies
+- [PyBoy source and LGPL license](https://github.com/Baekalfen/PyBoy/tree/4627b90b878e91faff443b3acd6d4e4be09a4387), the upstream project that PyBoy RS ports
+- [PyBoy RS source](https://github.com/afk-sapien/pyboy-rs)
+- [GNU GPL version 3](https://www.gnu.org/licenses/gpl-3.0.html)
+- [Pinned Red and Blue disassembly source](https://github.com/pret/pokered/tree/a1a22aaf84d1675bcdbaeb194592379d586d838e)
+- [Pinned Gold and Silver disassembly source](https://github.com/pret/pokegold/tree/62388c7204e5d13aa05b4231e220b6760584d1b5)
+- [Pinned Crystal disassembly source](https://github.com/pret/pokecrystal/tree/5beda23ffa505f62e1dad7e3d7c214d1737b3358)
 
-Runtime dependencies are declared in `pyproject.toml`: FastAPI, Starlette,
-Uvicorn, HTTPX, Pillow, Pydantic, and python-dotenv. Each retains its own
-license; installed package metadata and notices are available in the Python
-environment or container image. Development-only dependencies include pytest
-and pytest-asyncio.
-
-## Fonts and assets
-
-The dashboard uses system fonts and an inline SVG favicon. It bundles no
-Pokémon artwork. The demo emulator draws a procedural placeholder scene.
+The optional item icon pack uses the same pinned PokéAPI revision and download
+process. It maps 125 Red/Blue item entries to 86 later-generation images, with
+TM/HM discs colored by their Generation I move types. Later-game equivalents
+include Exp. Share for Exp. All and Dowsing Machine for Itemfinder. Icons and the
+source notice are stored only in the owner’s data directory, never in release
+packages. The pack can be installed or hidden independently of Pokémon portraits.

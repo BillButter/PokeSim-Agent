@@ -1,0 +1,172 @@
+# Publishing a release
+
+The release workflow publishes Python packages, a Linux amd64 image at
+`ghcr.io/afk-sapien/pokesim:<version>`, and versioned Compose downloads.
+Standalone executables and app bundles are excluded. The image archive remains
+available as a checksummed release download for offline loading.
+
+## Trigger and checks
+
+Ordinary branch pushes and pull requests do not publish anything. When ready to
+release, update `pyproject.toml`, the lockfile, both installer version defaults,
+Docker defaults, and release notes for the chosen version. Commit and merge the
+reviewed changes to `main`. Push a new `v<version>` tag for that exact commit, then
+create a draft release and start the publishing workflow:
+
+```sh
+git tag v0.5.3
+git push origin v0.5.3
+gh release create v0.5.3 --verify-tag --draft --title "PokeSim 0.5.3" --notes-file docs/release-notes.md
+gh workflow run release.yml --ref main -f tag=v0.5.3
+```
+
+Use the actual next version when following these examples. A tag push alone does
+not publish anything. The tag must match the package version and release notes heading.
+Only draft releases can be built. The workflow publishes the draft after every upload
+has been verified, so `/releases/latest/download/` continues to serve the previous
+completed stable release throughout validation. Public installation commands use those
+release asset URLs rather than files from `main`.
+
+To retry a failed run, start the workflow manually with the unchanged draft's tag.
+It refuses a version whose final image download is already attached, so inspect a
+failure during the final upload before retrying. Never move a published tag.
+
+The workflow does not repeat the verification matrix. The CI and Python install
+workflows already run on every push to `main` and on every tag. The `gate` job runs
+`tools/check_release_gates.py` and requires push runs of both workflows for the exact
+release commit in which every job succeeded, every required job is present by its exact
+name, and none was skipped or cancelled. Required jobs are the whole CI workflow (lint, the
+dependency audit, tests on Python 3.11, 3.12 and 3.14, the four browser shards, and both
+container jobs) and the whole Python install workflow (the native test shards on Linux x86
+and ARM, macOS Intel and ARM and all four Windows shards, the fresh installs on the same
+platforms, and the acceleration job). The job list in `tools/check_release_gates.py` is
+compared with the workflow files by `tests/test_release_gates.py`, so adding, renaming or
+removing a job in a workflow fails the tests until the gate agrees. The gate waits for runs
+that are still in progress and fails for a missing or failed run, so wait for green checks
+on the release commit before starting the workflow. The script comes from the commit that
+dispatched the workflow, not from the release revision.
+
+The `build` job runs in parallel with the gate. It builds the wheel and source package,
+checks them, builds and tests the Linux amd64 image, assembles the downloads, and keeps
+them as a workflow artifact. It has read-only permissions and publishes nothing. The
+`publish` job runs only after both the gate and the build succeed. It is the only job that
+can push an image or change a release. It loads the tested image from the build artifact,
+logs in to GHCR with the repository's temporary
+`GITHUB_TOKEN`, and pushes the exact version tag. No personal access token or added
+repository secret is needed. The publishing job has `packages: write` and
+`contents: write`. Draft validation also needs `contents: write` because GitHub only
+exposes draft releases to identities with push access. All other jobs retain read-only access.
+
+To rehearse the whole workflow without publishing, start it with the dry run input:
+
+```sh
+gh workflow run release.yml --ref main -f tag=v0.5.3 -f dry_run=true
+```
+
+A dry run validates the tag, runs the gate, and runs the full build and image checks. The
+`publish` job is skipped, so no image is pushed and no release is uploaded or edited. A dry run
+does not require a draft release, so it can also run against a tag that is already published.
+
+It next pulls the image using an empty Docker credentials directory and verifies
+that it has the same image ID as the tested build. Release assembly records the
+registry digest, image ID, source revision, platform, and file checksums.
+`compose.yaml`, `compose.quickstart.yaml`, and `env.example` select the exact image version.
+The `install.sh` and `install.ps1` downloads select the matching wheel version and are
+included in the checksums. The Python matrix exercises both installer scripts on their
+respective platforms, including repeat installation. The container checks exercise a
+fresh named volume and verify that it survives container removal and recreation. The workflow uploads the
+downloads to the release and verifies every uploaded checksum. Versions containing
+`rc` are marked as prereleases. After publication, `tools/floating_tags.py` moves
+`latest` to the newest stable release and `<major>.<minor>`, such as `0.5`, to the newest
+stable release of its line. A fix to an older line moves only that line, and release
+candidates move neither. Each moved tag is pulled anonymously and checked against the tested image.
+
+## Emulator dependencies are GitHub release wheels
+
+PokeSim 0.5 depends on `pokesim-core` and `pyboy-rs`, which are not on PyPI. `pyproject.toml` names
+their release wheels directly, each with a `#sha256=` fragment that pip and uv verify, so the PokeSim
+wheel's metadata resolves for uv, pip and pipx without a Rust toolchain, and `uv.lock` records the same
+hashes. pyboy-rs has one abi3 wheel per supported platform (Linux x86-64 and aarch64, macOS x86-64 and
+arm64, Windows x86-64), selected by markers. Core carries the union of those markers as well. Without
+that, Core's own requirement on `pyboy-rs` would make pip ask PyPI for the name on a platform with no
+wheel (Windows ARM64, 32-bit ARM, FreeBSD), which is a dependency confusion risk. On those platforms
+nothing is installed from either name, and the installers and the application say so. Musl Linux
+(Alpine) matches the Linux markers but has no compatible wheel, so pip stops with a wheel error, and
+`install.sh` refuses it up front. PyPI names must never be relied on: `pip install pokesim` installs an
+unrelated project, and the docs and installers never suggest it.
+
+Before tagging PokeSim, both upstream releases must exist with their wheels attached, and the pyboy-rs
+release must also carry its source archive, which the Dockerfile fetches with a required
+`EMULATOR_SOURCE_SHA256`. The upstream release workflows should refuse `--clobber` on a release that is
+already public, so a published asset can never change under a recorded hash. That belongs to the pyboy-rs
+and Core repositories. PokeSim's own check is that every asset hash in `uv.lock` equals the hash of the
+file the release serves.
+
+### Temporary pins and how they are finalized
+
+While the upstream releases do not exist, one commit marked TEMP points the pins at copies in
+`tools/temp-wheels/` (see `TEMP_REMOVE_BEFORE_RELEASE.md`). Those pins must not reach a tag.
+`tools/check_release_pins.py` fails if any of these remain: a URL containing `refs/heads/` or
+`temp-wheels`, the `tools/temp-wheels/` directory, `TEMP_REMOVE_BEFORE_RELEASE.md`, a TEMP comment in the
+Dockerfile, a pyproject URL without a `#sha256=` fragment equal to the locked hash, an empty or malformed
+`EMULATOR_SOURCE_SHA256`, or a source archive name that differs from the locked pyboy-rs version. The
+release workflow runs it in the `validate` job (with `--remote`, which also downloads every locked
+emulator asset and the source archive and compares their SHA-256 with `uv.lock` and the Dockerfile) and
+the `gate` job runs the local half against the release revision. A dry run fails the same way.
+
+To finalize, once both upstream releases are public:
+
+1. Write a manifest of the final asset URLs and hashes (see the docstring of
+   `tools/finalize_release_pins.py`). The asset names are the same wheels as the temporary copies.
+2. `python tools/finalize_release_pins.py manifest.json` rewrites `pyproject.toml` (final URLs with
+   `#sha256=` fragments, no temp-wheels `[tool.uv.sources]` entry), `uv.lock` (URL sources and
+   hashes), and the Dockerfile (source archive URL and checksum, no temp-wheels COPY), removes the TEMP
+   comments, and deletes `tools/temp-wheels/` and `TEMP_REMOVE_BEFORE_RELEASE.md`. It re-checks its own
+   result and, if anything is left over, puts every file back and fails.
+3. `uv lock --check` confirms the lock still matches. Run `uv lock` if the upstream metadata changed.
+4. `python tools/check_release_pins.py --remote` downloads the published assets and compares hashes.
+5. Commit, let CI pass on the release commit, then tag.
+
+Reverting the TEMP commit and running `uv lock` is the equivalent manual route. After either route,
+`tests/test_release_pins.py` still passes because it builds its own trees.
+
+## First publication: package visibility
+
+GitHub creates a new GHCR package as private, even for a public repository.
+After the first image push, open the account's **Packages**, select **pokesim**,
+open **Package settings**, and change its visibility to **Public**. Confirm that
+the package is linked to this repository and that the repository has Actions
+access. See [GitHub's package visibility instructions](https://docs.github.com/en/packages/learn-github-packages/configuring-a-packages-access-control-and-visibility).
+
+The first run will stop at anonymous pull verification until that visibility
+setting is public. Set it once, then rerun the workflow for the same tag. Subsequent
+versions of the public package retain its visibility and publish automatically.
+Nothing needs to be uploaded now to prepare this workflow. Repository or account
+policies that prohibit package creation must be resolved before the first release.
+
+## Failed runs and retries
+
+A failed gate or build leaves GHCR unchanged and the GitHub
+release remains a private draft. The previous completed stable release stays latest. Once the image has been pushed, a later
+failure can leave that image in GHCR with an incomplete draft asset list. Inspect the
+failure and rerun the workflow manually against the same unchanged tag. It replaces
+partial assets and checks the complete asset set. Never move a published tag. Fix
+released software in a new version.
+
+Rerunning an unpublished candidate can rebuild and replace its registry tag.
+The final manifest records the verified digest for that run. Published releases
+are rejected before the build, so this workflow does not overwrite their images.
+Existing installations keep their selected version until their owners upgrade.
+
+## Local checks without publishing
+
+```sh
+uv run --locked pytest -q tests/test_release_assembly.py tests/test_registry_image.py
+uv run --locked python tools/check_docs.py
+docker compose --env-file .env.example config --quiet
+docker compose --env-file .env.example -f compose.yaml -f compose.build.yaml config --quiet
+```
+
+These commands do not push images, create tags, dispatch workflows, or publish
+releases. Native ARM64 images would require additional build and runtime validation
+before adding them to this pipeline.

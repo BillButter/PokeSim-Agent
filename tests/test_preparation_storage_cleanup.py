@@ -1,0 +1,86 @@
+"""Completely full storage can free exactly one safe spare through PC inputs."""
+from dataclasses import asdict, replace
+
+from pokesim.runtime import preparation
+from pokesim.trade.preferences import identity
+from test_duplicates import snapshot, stored
+from test_preparation import participant, storage_menu, storage_party, storage_step
+from test_strategy import menu
+from shortcut_fakes import record_all
+
+
+def full_storage(snap, candidate):
+    copies = (replace(candidate, level=1), stored(1, trainer_id=102, level=2),
+              stored(2, trainer_id=103, level=3))
+    return replace(snapshot(copies, party=storage_party()), map=snap.map, x=snap.x, y=snap.y,
+                   textbox=True, box_counts=(20,) * 12, boxed_pokemon=((153, 20),) * 20)
+
+
+def begin_cleanup(emu, snap, candidate, monkeypatch):
+    recorders = record_all(monkeypatch)
+    preparation.begin(emu, identity(asdict(candidate)), 'transaction-1')
+    full = full_storage(snap, candidate)
+    emu.store.set_trade_preference(identity(asdict(full.stored_details[1])), {'state': 'locked'})
+    controller = emu.preparation
+    assert storage_step(controller, full, storage_menu(2)) == 'a'
+    recorder = recorders(controller.storage_cleanup.shortcut)
+    assert recorder.last.kind == 'release_pokemon' and recorder.last.position == 2
+    return controller, full, recorder
+
+
+def test_cleanup_reserves_offer_and_existing_lock_before_selecting_spare(participant, monkeypatch):
+    emu, snap, candidate = participant
+    controller, full, _ = begin_cleanup(emu, snap, candidate, monkeypatch)
+    assert controller.storage_cleanup._release_target(full) == (0, 2)
+    preferences = controller.storage_cleanup.trade_preferences()
+    assert preferences[controller.state['trade_key']]['state'] == 'offered'
+    assert preferences[identity(asdict(full.stored_details[1]))]['state'] == 'locked'
+    assert emu.store.trade_preferences().get(controller.state['trade_key']) is None
+
+
+def test_release_in_progress_rechecks_exact_safe_individual(participant, monkeypatch):
+    emu, snap, candidate = participant
+    controller, full, _ = begin_cleanup(emu, snap, candidate, monkeypatch)
+    runner = controller.storage_cleanup.shortcut
+    emu.store.set_trade_preference(identity(asdict(full.stored_details[2])), {'state': 'locked'})
+    assert storage_step(controller, full, storage_menu(2)) == 'b'
+    assert not runner.active
+    assert storage_step(controller, full, storage_menu(2)) is None
+    assert 'no unprotected spare duplicate' in emu.store.get(preparation.KEY)['error']
+
+
+def test_one_freed_slot_closes_cleanup_before_normal_deposit(participant, monkeypatch):
+    emu, snap, candidate = participant
+    controller, full, recorder = begin_cleanup(emu, snap, candidate, monkeypatch)
+    recorder.finish()
+    freed = replace(full, box_counts=(19,) + (20,) * 11,
+                    boxed_pokemon=full.boxed_pokemon[:19])
+    assert storage_step(controller, freed, storage_menu(2)) == 'b'
+    assert controller.storage_cleanup is not None
+    overworld = replace(freed, textbox=False)
+    assert storage_step(controller, overworld, bytearray(65536)) == 'up'
+    assert controller.storage_cleanup is None
+    assert storage_step(controller, freed, storage_menu(1)) == 'a'
+    assert controller.operation == 'deposit'
+
+
+def test_only_offered_spare_and_unique_pokemon_are_never_released(participant):
+    emu, snap, candidate = participant
+    preparation.begin(emu, identity(asdict(candidate)), 'transaction-1')
+    unique = stored(1, trainer_id=102, species=0xB0)
+    full = replace(snapshot((candidate, unique), party=storage_party()),
+                   map=snap.map, x=snap.x, y=snap.y, textbox=True,
+                   box_counts=(20,) * 12, boxed_pokemon=((153, 20),) * 20)
+    assert storage_step(emu.preparation, full, storage_menu(2)) is None
+    assert 'no unprotected spare duplicate' in emu.store.get(preparation.KEY)['error']
+
+
+def test_a_pc_nothing_can_be_released_from_is_sealed_for_offers(participant):
+    """A full party and PC with no spare to release would only fail preparation, so offers stop."""
+    _, snap, candidate = participant
+    full = full_storage(snap, candidate)
+    assert not preparation.sealed(full, {})
+    locked = {identity(asdict(mon)): {'state': 'locked'} for mon in full.stored_details}
+    assert preparation.sealed(full, locked)
+    assert not preparation.sealed(replace(full, box_counts=(19,) + (20,) * 11,
+                                          boxed_pokemon=full.boxed_pokemon[:19]), locked)

@@ -1,0 +1,127 @@
+# Long-term collection goals
+
+Each adventure keeps its own collection records. The Pokédex header shows
+Registered, Seen, Level 100, Perfect, and Shiny coverage, each out of 151 species.
+
+## A level 100 Pokédex
+
+The Pokédex shows a gold star and a progress counter out of 151. A species earns
+its star when a level 100 partner is observed in the party or any PC box.
+A final evolution also awards stars to all its ancestors. For example,
+Venusaur awards Bulbasaur, Ivysaur, and Venusaur. Vaporeon awards Eevee and
+Vaporeon. Jolteon and Flareon each need their own completion.
+
+Training projects prefer partners whose evolution line still has stars to earn.
+Existing level 100 partners are recognized automatically after the upgrade.
+The historical counter does not claim that every individual is currently level 100.
+
+## DV star ratings
+
+PC cards and details show each partner's fixed potential as one to four stars.
+The rating uses the existing sum of all five DVs out of 75, including derived HP.
+It is a PokeSim scale inspired by appraisal stars, independent of level and training.
+
+| Rating | Total DVs | Potential |
+| --- | --- | --- |
+| 1★ | 0–37 | Below 50% |
+| 2★ | 38–59 | 50% to under 80% |
+| 3★ | 60–74 | 80% to under 100% |
+| 4★ | 75 | Every DV is 15 |
+
+Missing or invalid DV data shows an unknown rating. Filter the PC by any rating
+or by three stars and better. The all-partners view can sort by rating, with the
+higher DV total first within each tier and unknown values last in either direction.
+
+The Pokédex shows **3★ partners held**, the current number in the party and all
+boxes, excluding four-star partners. **3★+ species found** is a durable count of
+species observed with three or four stars. Duplicate partners count separately
+in the live total but only once per species in the historical record. Evolution
+credits only each species actually observed, never unseen ancestors or branches.
+These records are distinct from level 100 milestones. Existing perfect records
+also count toward three-star-or-better species, even if the partner has left.
+Old released partners without records cannot be reconstructed.
+
+## Perfect DV finds
+
+A perfect Pokémon has 15 in every DV: HP, Attack, Defense, Speed, and Special.
+HP is derived from the other four DVs. This measures natural potential, not
+stat experience or current battle stats.
+
+Perfect individuals receive a soft animated halo and a labeled badge in the PC.
+The effect respects reduced-motion preferences. Perfect collection coverage uses
+the same rule as level 100: a final evolution credits its ancestors, never sibling
+branches. A perfect Venusaur credits Bulbasaur, Ivysaur, and Venusaur. A perfect
+Vaporeon credits Eevee and Vaporeon. Existing perfect species records automatically
+receive this coverage credit without increasing the number of individual finds
+or changing the cartridge Pokédex flags.
+
+The automatic player keeps perfect individuals alongside the best future and
+current partners of each species. Rare-find protection and bounded hunting before
+training are described in the [investment guide](pokemon-stats.md#training). Automatic release, NPC exchanges, and peer trade offers
+exclude them. Repeat expeditions continue looking for rare partners after the
+ordinary Pokédex is complete, while training and supply trips still have priority.
+
+Journal Stats shows individual perfect finds. Its total with a plus sign is a
+**confirmed minimum**, separate from the Pokédex species coverage counter.
+Existing partners establish a baseline. New perfect catches on every verified
+cartridge add durable capture receipts, so replaying the same saved capture
+does not add another find.
+
+Generation I does not have a unique individual identifier. For existing inventory,
+records use the largest simultaneously observed count for each original trainer
+and evolution family. Nicknames, evolution, or moving boxes cannot create extra
+finds. Identical gifts or trades after a partner leaves may be indistinguishable,
+and previously released partners cannot be reconstructed. Unknown DV data never
+receives perfect credit.
+
+## Shiny collection
+
+The shiny counter is species coverage out of 151, with the same final-evolution
+credit as perfect and level-100 milestones. Duplicate individuals count once per
+species. Verified catches, custom gifts, and observed party or PC partners count.
+A wild sighting alone does not earn collection credit. Confirmed records remain
+after trading or evolving a partner and survive restarts and save rewinds.
+
+Journal Stats holds the individual totals: wild shinies seen, shiny catches plus
+custom gifts, and shinies currently held. Sightings and acquisitions start when
+tracking was enabled. Older unrecorded shinies cannot be reconstructed.
+
+## Catching a shiny
+
+The adventure does not pause for a shiny. Balls cannot be bought and storage cannot be
+freed during a battle, so a pause would only look like a stall. Instead the player keeps
+at least 10 balls in stock (restocking at a shop when affordable) and keeps free storage
+slots, switching to an open box or releasing a spare duplicate when needed. A shiny is
+caught with a Master Ball when there is one, and otherwise with the normal ball routine.
+If a shiny still cannot be caught, the player runs, and the journal and notifications
+record "Shiny <species> could not be caught: no balls" or "no storage space". That
+notification is informational: low priority, under "Everything else", so it does not interrupt like a stall. Taking control yourself is
+never interrupted.
+
+## Persistence
+
+Records live in the adventure's SQLite database, separately from save checkpoints.
+They survive application restarts, evolution, ordinary save rewinds, and journal
+pruning. Starting a fresh adventure resets its goals. Back up the entire adventure
+data directory to preserve both the game and these records.
+
+
+## League party rotation
+
+The first League attempt keeps the story party. Each newly selected post-Champion
+rematch can retrieve one reserve through ordinary PC menus before entering the
+League. The reserve must be identifiable, at least level 50, have a damaging move,
+and have at least 75% of the replaced partner's current Power. This is a conservative
+eligibility rule, not a victory guarantee.
+
+Rotation favors reserves with fewer recorded rotation appearances, then a species
+not already in the party, then current Power. The strongest party member stays,
+and a sole carrier of a field move is not deposited. Locked or offered trade
+partners are excluded. A rotation deposits rather than releases the outgoing
+Pokémon. If no suitable reserve or storage space exists, the rematch keeps the
+current team. Missing or ambiguous targets do not hold up the League indefinitely.
+
+Rotation choices and appearance counts survive saves and restores. Counts begin
+with this feature and record prepared rematch parties, not historical Elite Four
+wins. The selected party stays fixed during the League challenge. An already
+active rematch is left alone until the next project.

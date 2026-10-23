@@ -1,0 +1,123 @@
+"""Presentation data for the party, including the original game's XP curves."""
+from math import isqrt, sqrt
+
+from .strategy_data import MOVES, SPECIES
+
+TYPES = {0: "Normal", 1: "Fighting", 2: "Flying", 3: "Poison", 4: "Ground", 5: "Rock",
+         6: "Bird", 7: "Bug", 8: "Ghost", 20: "Fire", 21: "Water", 22: "Grass",
+         23: "Electric", 24: "Psychic", 25: "Ice", 26: "Dragon"}
+STAT_NAMES = ('HP', 'Attack', 'Defense', 'Speed', 'Special')
+
+
+def dv_rating(mon):
+    """Rate fixed potential using all five DVs, including derived HP, out of 75."""
+    dvs = mon.get('dvs')
+    if (not isinstance(dvs, (list, tuple)) or len(dvs) != 5
+            or any(type(value) is not int or not 0 <= value <= 15 for value in dvs)):
+        return {'dv_stars': None, 'dv_total': None, 'dv_percent': None}
+    total = sum(dvs)
+    stars = 4 if total == 75 else 3 if total >= 60 else 2 if total >= 38 else 1
+    return {'dv_stars': stars, 'dv_total': total, 'dv_percent': round(total * 100 / 75, 1)}
+
+
+def stored_strength(mon):
+    """Calculate withdrawal stats using the pinned pokered home/move_mon.asm CalcStat.
+
+    Power estimates overall strength from offense, durability, and speed.
+    Stat total preserves the unweighted sum of the five stats.
+    Older snapshots without individual data have no score.
+    """
+    species = SPECIES.get(mon.get('species'))
+    level = mon.get('level')
+    dvs, training = mon.get('dvs'), mon.get('stat_exp')
+    if (not species or type(level) is not int or not 1 <= level <= 100
+            or not isinstance(dvs, (list, tuple)) or len(dvs) != 5
+            or not isinstance(training, (list, tuple)) or len(training) != 5
+            or any(type(v) is not int or not 0 <= v <= 15 for v in dvs)
+            or any(type(v) is not int or not 0 <= v <= 65535 for v in training)):
+        return {'calculated_stats': None, 'stat_total': None, 'power': None}
+    stats = {}
+    for index, (label, base, dv, exp) in enumerate(zip(STAT_NAMES, species['stats'], dvs, training)):
+        # The cartridge rounds the square root up and caps it before division.
+        root = isqrt(exp)
+        bonus = min(255, root + (root * root < exp)) // 4
+        value = ((base + dv) * 2 + bonus) * level // 100
+        stats[label] = min(999, value + (level + 10 if index == 0 else 5))
+    hp, attack, defense, speed, special = (stats[name] for name in STAT_NAMES)
+    offense = (3 * max(attack, special) + min(attack, special)) / 4
+    # Equal physical and special exposure limits the benefit of one huge defense.
+    durability = 2 * defense * special / (defense + special)
+    power = int(offense * sqrt(hp * durability) * (1 + speed / 500) / 50)
+    return {'calculated_stats': stats, 'stat_total': sum(stats.values()), 'power': power}
+
+
+
+def experience_at_level(level, growth):
+    level = max(1, min(100, level))
+    cube = level ** 3
+    if growth == "FAST":
+        return 4 * cube // 5
+    if growth == "SLOW":
+        return 5 * cube // 4
+    if growth == "MEDIUM_SLOW":
+        return max(0, 6 * cube // 5 - 15 * level ** 2 + 100 * level - 140)
+    return cube
+
+
+def experience_details(total, level, growth):
+    """Progress through the current level on the species' XP curve, or None without one."""
+    if not growth or type(total) is not int or type(level) is not int or not 1 <= level <= 100:
+        return None
+    floor = experience_at_level(level, growth)
+    ceiling = experience_at_level(level + 1, growth)
+    capped = level >= 100
+    span = max(1, ceiling - floor)
+    earned = max(0, min(span, total - floor))
+    return {"total": total, "earned": earned, "needed": span,
+            "remaining": 0 if capped else max(0, ceiling - total),
+            "percent": 100 if capped else round(100 * earned / span, 1), "max_level": capped}
+
+
+def move_details(moves, pp=None, max_pp=None):
+    """Name, type, power and accuracy for each known move, with PP where the source has it."""
+    rows = []
+    for i, mid in enumerate(moves or ()):
+        if not mid:
+            continue
+        move = MOVES.get(mid, {})
+        row = {"name": move.get("name", f"Move {mid}").replace("_", " ").title(),
+               "type": TYPES.get(move.get("type"), "Unknown"),
+               "power": move.get("power"), "accuracy": move.get("accuracy")}
+        if pp is not None and i < len(pp):
+            row["pp"] = pp[i]
+            row["max_pp"] = max_pp[i] if max_pp is not None and i < len(max_pp) else move.get("pp", 0)
+        rows.append(row)
+    return rows
+
+
+def status_label(hp, status):
+    return "Fainted" if hp <= 0 else "Asleep" if status & 7 else next(
+        (label for bit, label in ((8, "Poisoned"), (16, "Burned"), (32, "Frozen"), (64, "Paralyzed"))
+         if status & bit), "Healthy")
+
+
+def stored_condition(mon):
+    """HP, status and PP for a boxed Gen I record, which stores current HP and PP but not maximum HP."""
+    hp, pp = mon.get("hp"), mon.get("pp")
+    stats = stored_strength(mon)["calculated_stats"]
+    out = {"move_details": move_details(mon.get("moves"), pp or None, mon.get("max_pp") or None)}
+    if type(hp) is int and stats:
+        out.update(hp=min(hp, stats["HP"]), max_hp=stats["HP"], status_label=status_label(hp, mon.get("status") or 0))
+    return out
+
+
+def party_details(mon):
+    from .shiny import is_shiny
+    species = SPECIES.get(mon.species, {})
+    xp = experience_details(mon.experience, mon.level, species.get("growth")) if mon.level > 0 else None
+    return {"dex": species.get("dex"), "experience": xp, "status_label": status_label(mon.hp, mon.status),
+            **({'trainer_id': mon.trainer_id} if mon.trainer_id is not None else {}),
+            "dvs": mon.dvs, "stat_exp": mon.stat_exp, "shiny": is_shiny({"dvs": mon.dvs}),
+            "type_names": list(dict.fromkeys(TYPES.get(t, "Unknown") for t in mon.types)),
+            "stats": {"Attack": mon.attack, "Defense": mon.defense, "Speed": mon.speed, "Special": mon.special},
+            "move_details": move_details(mon.moves, mon.pp, mon.max_pp)}

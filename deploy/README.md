@@ -38,8 +38,9 @@ systemctl --user enable --now podman-auto-update.timer
 loginctl enable-linger "$USER"
 ```
 
-Open <http://127.0.0.1:8000>. Drop `.gb`/`.gbc` files into `~/pokesim/roms` and
-click **Rescan** in the dashboard.
+Open <http://127.0.0.1:8000>. Drop `.gb`, `.gbc` or `.zip` files into
+`~/pokesim/roms` and restart the service. Every supported cartridge in the
+read-only mount is imported into the Adventure Library at startup.
 
 `UserNS=keep-id:uid=1000,gid=1000` maps your host account onto the image's
 `pokesim` user (UID/GID 1000), so `~/pokesim/data` remains writable even if your
@@ -79,7 +80,7 @@ If you prefer manual upgrades, either disable the timer
 (`systemctl --user disable --now podman-auto-update.timer`) or pin a version:
 
 ```ini
-Image=ghcr.io/billbutter/pokesim-agent:v0.1.0
+Image=ghcr.io/billbutter/pokesim-agent:v0.5.3-agent
 ```
 
 Auto-update still works with a version tag; it simply tracks that tag instead of
@@ -102,8 +103,15 @@ systemctl --user daemon-reload
 systemctl --user restart pokesim-agent.service
 ```
 
-Per-game endpoints and modes are still configured in the web dashboard and
-persisted under `~/pokesim/data`.
+The endpoint is server-wide. The per-game **AI player** is selected in the
+Adventure Library when creating an adventure and can be changed later in
+**Adventure settings**:
+
+- **Default** runs upstream PokeSim's original strategic autopilot.
+- **Vision agent** sends screenshots and game state to the configured endpoint.
+- **Manual only** leaves the game to the keyboard and controller.
+
+The choice is stored with the adventure under `~/pokesim/data` and applies live.
 
 ## Rootful install
 

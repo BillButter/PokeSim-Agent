@@ -1,0 +1,35 @@
+"""Check that the actual browser enforces the application content policy."""
+import pytest
+
+from pokesim.app.manager import Manager, create_app
+from conftest import serve
+
+
+def expect(value):
+    from playwright.sync_api import expect as assertion
+    return assertion(value)
+
+
+# The test injects an inline script to prove the page policy blocks it.
+@pytest.mark.expected_errors(r'^console .*Executing inline script violates the following Content Security Policy')
+def test_library_scripts_work_and_injected_inline_script_is_blocked(page, tmp_path, monkeypatch):
+    def factory(url):
+        manager = Manager(tmp_path / 'library', url)
+        monkeypatch.setattr(manager, 'start', lambda: None)
+        return create_app(manager)
+
+    with serve(factory) as url:
+        page.goto(url)
+        page.locator('#workspace').wait_for(state='visible')
+        page.get_by_role('link', name='Settings', exact=True).click()
+        page.locator('#create-backup').click()
+        # A string predicate needs eval, which this page's content policy forbids.
+        expect(page.locator('#notice')).to_have_text('Backup ready to download.')
+        violation = page.evaluate("""() => new Promise(resolve => {
+            document.addEventListener('securitypolicyviolation', event => resolve(event.violatedDirective), {once: true})
+            const script = document.createElement('script')
+            script.textContent = 'window.injectedScriptRan = true'
+            document.body.appendChild(script)
+        })""")
+        assert violation == 'script-src-elem'
+        assert page.evaluate('window.injectedScriptRan === undefined')

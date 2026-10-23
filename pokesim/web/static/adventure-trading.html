@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en" data-theme="auto">
+<head>
+<meta charset="utf-8">
+<meta name="pokesim-base" content="${game_base}">
+<meta name="pokesim-adventure" content="${adventure_id}">
+<meta name="pokesim-sprites" content="${sprite_version}">
+<script src="${game_base}/static/routes.js?v=offers-1"></script>
+<script src="${game_base}/static/types.js?v=glow-1"></script>
+<script src="${game_base}/static/panel.js?v=panel-4"></script>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#DDDAD0" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#20241F" media="(prefers-color-scheme: dark)">
+<meta name="description" content="Turn automatic trading on or off, make a trade between your adventures and see this adventure’s trade history.">
+<title>${adventure_name} trading · pokesim</title>
+<link rel="icon" href="${game_base}/static/favicon.svg" type="image/svg+xml">
+<link rel="preload" href="${game_base}/static/fonts/pokesim-panel.woff2?v=2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="${game_base}/static/tokens.css?v=panel-1">
+<link rel="stylesheet" href="${game_base}/static/panel.css?v=pass2-1">
+<link rel="stylesheet" href="${game_base}/static/types.css?v=glow-2">
+<link rel="stylesheet" href="${game_base}/static/mon-grid.css?v=locks-1">
+<link rel="stylesheet" href="${game_base}/static/panel-trading.css?v=tabs-1">
+<link rel="alternate" type="application/atom+xml" title="pokesim events" href="${game_base}/feed.xml">
+</head>
+<body data-page="trading">
+<a class="skip-link" href="#main">Skip to trading.</a>
+
+<header class="rail">
+<div class="shell rail-inner">
+<a class="brandplate" href="${brand_href}" aria-label="${brand_label}" title="${brand_label}"><span class="mark" aria-hidden="true"></span><span><span class="wordmark">PokeSim</span><span class="model" id="app-version">${app_version}</span></span></a>
+${library_nav}<nav aria-label="Main navigation"><a href="${game_base}/">Live</a><a href="${game_base}/pokedex">Pokédex</a><a href="${game_base}/pc">PC</a><a href="${game_base}/trading" aria-current="page">Trading</a><a href="${game_base}/journal">Journal</a><a href="${game_base}/stats">Stats</a></nav>
+<span class="connection" id="connection"><i class="lamp" aria-hidden="true"></i><span id="status">Connecting</span></span>
+</div>
+</header>
+
+<main id="main" class="shell">
+<header class="identity page-head">
+<div class="who"><p class="micro">${adventure_name}</p><h1>Trading</h1></div>
+</header>
+
+<section class="trade-overview" aria-label="Automatic trading" id="trade-overview">
+<button type="button" role="switch" id="auto-switch" class="auto-switch" aria-checked="true" title="Locked, shiny and perfect DV Pokémon, last copies and the active party are never traded automatically." disabled><i class="lamp" id="trade-lamp" aria-hidden="true"></i><span>Auto trading</span> <b id="auto-switch-state">On</b><span class="auto-switch-track" aria-hidden="true"></span></button>
+<p id="auto-note" class="trade-notice" role="status" aria-live="polite" hidden></p>
+</section>
+<p id="trade-connection-note" class="trade-notice" role="status" hidden></p>
+
+<div class="trade-tabs" role="tablist" aria-label="Trading">
+<button type="button" role="tab" id="tab-make" aria-controls="panel-make" aria-selected="true" tabindex="0">Make a trade</button>
+<button type="button" role="tab" id="tab-history" aria-controls="panel-history" aria-selected="false" tabindex="-1">History <span class="tab-count" id="trade-history-count"></span></button>
+</div>
+
+<div id="panel-make" class="trade-panel" role="tabpanel" aria-labelledby="tab-make" tabindex="0">
+<section id="current-exchange-section" class="trade-section" aria-labelledby="current-heading"><div class="section-head"><h2 class="legend legend--ink" id="current-heading">Current exchange</h2></div><div id="trade-active" class="deal-list" aria-live="polite">Checking for an exchange…</div></section>
+
+<section id="make-trade" class="trade-section" aria-labelledby="tab-make">
+<p id="pick-note" class="trade-notice" role="status" aria-live="polite" hidden></p>
+<div class="builder">
+<div class="builder-partner"><label class="field builder-game" for="pick-game"><span class="micro">Trade with</span><span class="select"><select id="pick-game"><option value="">Choose a game</option></select></span></label><p class="builder-from micro">From <b>${adventure_name}</b></p></div>
+<p id="pick-game-reason" class="pick-reason builder-reason" role="note" hidden></p>
+<div class="builder-slots">
+<section class="builder-slot" aria-labelledby="slot-send-label"><div class="section-head"><h2 class="legend legend--ink" id="slot-send-label">You send</h2></div><div id="slot-send" class="slot-body"></div></section>
+<span class="swap-arrow builder-arrow" aria-hidden="true">⇄</span>
+<section class="builder-slot" aria-labelledby="slot-get-label"><div class="section-head"><h2 class="legend legend--ink" id="slot-get-label">You get</h2><span class="micro" id="slot-get-game"></span></div><div id="slot-get" class="slot-body"></div></section>
+</div>
+<p id="pick-summary" class="builder-summary is-reason" hidden></p>
+<div class="builder-actions"><button type="button" class="key key--primary" id="pick-confirm" disabled>Trade</button><button type="button" class="key" id="pick-reset">Clear</button></div>
+</div>
+</section>
+</div>
+
+<div id="panel-history" class="trade-panel" role="tabpanel" aria-labelledby="tab-history" tabindex="0" hidden>
+<section id="trade-history-section" class="trade-section" aria-labelledby="tab-history"><div id="trade-history" class="deal-list" aria-live="polite">Loading…</div></section>
+</div>
+</main>
+
+<dialog id="pick-dialog" class="pick-dialog" aria-labelledby="pick-dialog-title"><div class="pick-dialog-head"><h2 class="legend legend--ink" id="pick-dialog-title">Choose a Pokémon</h2><button type="button" id="pick-dialog-close" class="key close-detail" aria-label="Close the picker">Close</button></div>
+<p id="pick-dialog-note" class="trade-notice" role="status" aria-live="polite" hidden></p>
+<div class="pick-pane" id="pick-mine-pane" hidden><div data-mon-toolbar="pick-mine"></div><div id="pick-mine" class="pc-grid pc-all-grid pick-grid" role="group" aria-label="Your Pokémon"><p class="dex-empty">Loading…</p></div></div>
+<div class="pick-pane" id="pick-theirs-pane" hidden><div data-mon-toolbar="pick-theirs"></div><div id="pick-theirs" class="pc-grid pc-all-grid pick-grid" role="group" aria-label="Their Pokémon"></div></div></dialog>
+<dialog id="trade-detail" class="pc-detail trade-detail" aria-labelledby="pc-detail-name"><button type="button" id="trade-detail-close" class="key close-detail" aria-label="Close Pokémon details">Close</button><div id="trade-detail-body"></div></dialog>
+
+<footer class="plate-foot">
+<div class="shell">
+<p>A small window into a very big adventure.</p>
+<div class="theme" role="group" aria-label="Colour theme"><button data-theme-choice="light" aria-pressed="false">Light</button><button data-theme-choice="auto" aria-pressed="false">Auto</button><button data-theme-choice="dark" aria-pressed="false">Dark</button></div>
+<div class="links"><a href="${game_base}/feed.xml">Atom feed</a><a href="https://github.com/afk-sapien/PokeSim" target="_blank" rel="noreferrer">GitHub</a></div>
+</div>
+</footer>
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+<script src="${game_base}/static/mon-grid.js?v=locks-1"></script>
+<script src="${game_base}/static/trade-ui.js?v=one-page-1"></script>
+<script src="${game_base}/static/adventure-trading.js?v=tabs-1"></script>
+<script src="${game_base}/static/trade-tabs.js?v=tabs-1"></script>
+</body>
+</html>

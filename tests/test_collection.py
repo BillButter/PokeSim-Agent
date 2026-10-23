@@ -1,0 +1,566 @@
+from dataclasses import replace
+import random
+
+import pytest
+
+from pokesim.policies.collection import Collection, DATA, EVOS, dex
+from pokesim.policies.battle import choose_battle, needs_healing
+from pokesim.policies.navigation import Navigator
+from pokesim.policies.progression import Goal
+from pokesim.policies.strategic import StrategicPolicy
+from pokesim.ram import read_snapshot, read_stored_pokemon, W_CURRENT_BOX, W_BOX_COUNT
+from pokesim.strategy_data import MAPS, ITEMS, SPECIES
+from pokesim.screen import Screen
+from test_events import snap
+from test_strategy import mon, flags, menu
+from shortcut_fakes import PRESS, Recorder
+
+
+def sid(d):
+    return next(i for i,m in SPECIES.items() if m['dex']==d)
+
+
+def state(**kw):
+    base=dict(party=(mon(hp=100,max_hp=100,level=40),), owned=frozenset({1}),
+              event_flags=flags('EVENT_GOT_POKEDEX'), items=((ITEMS['POKE_BALL'],10),))
+    base.update(kw)
+    return snap(**base)
+
+
+def test_data_is_version_specific_and_has_evolution_methods():
+    red=DATA['versions']['red']
+    blue=DATA['versions']['blue']
+    assert str(sid(43)) in red and str(sid(43)) not in blue
+    assert str(sid(69)) in blue and str(sid(69)) not in red
+    assert EVOS[sid(10)][0]['requirement']==7
+    assert EVOS[sid(64)][0]['method']=='trade'
+    assert EVOS[sid(44)][0]['requirement']=='LEAF_STONE'
+    assert any(r['method']=='fish' for r in red[str(sid(147))])
+
+
+def test_missing_low_level_species_gets_balls_without_a_lethal_attack():
+    me=mon(level=80,hp=200,max_hp=200,attack=200,special=200)
+    enemy=mon(species=sid(16),level=2,hp=10,max_hp=10,moves=(33,),pp=(35,))
+    s=state(party=(me,),in_battle=1)
+    assert choose_battle(s,me,enemy,0,collect_missing=True).kind=='item'
+
+
+def test_catcher_uses_non_damaging_status_and_preserves_legendary():
+    me=mon(moves=(79,33,0,0),pp=(15,35,0,0),hp=200,max_hp=200)
+    enemy=mon(species=sid(16),level=2,hp=10,max_hp=10,moves=(33,),pp=(35,))
+    s=state(party=(me,),in_battle=1)
+    decision=choose_battle(s,me,enemy,0,collect_missing=True)
+    assert (decision.kind,decision.index)==('fight',0)
+    enemy=replace(enemy,species=sid(144))
+    s=replace(s,items=((ITEMS['MASTER_BALL'],1),))
+    assert choose_battle(s,me,enemy,0,collect_missing=True).kind=='item'
+    s=replace(s,boxed_pokemon=((sid(16),2),)*20,party=(me,)*6)
+    assert choose_battle(s,me,enemy,0,collect_missing=True).kind!='item'
+
+
+def test_low_level_catcher_is_not_switched_into_certain_damage():
+    me=mon(level=80,hp=200,max_hp=200,defense=200,moves=(33,),pp=(35,))
+    weak=mon(level=2,hp=10,max_hp=10,defense=3,moves=(79,),pp=(15,))
+    enemy=mon(species=sid(16),level=40,hp=100,max_hp=100,attack=100,moves=(63,),pp=(5,))
+    s=state(party=(me,weak),in_battle=1)
+    assert choose_battle(s,me,enemy,0,collect_missing=True).kind!='switch'
+
+
+def test_hunt_deadline_survives_restart_and_yields_to_story():
+    c=Collection()
+    c.project={'species':sid(16),'method':'grass','map':MAPS['ROUTE_1'],'key':'hunt'}
+    c.remaining=50
+    saved=c.state_dict()
+    restored=Collection()
+    restored.load(saved)
+    restored.observe(state(frame=100))
+    restored.observe(state(frame=160))
+    assert restored.project is None
+    assert restored.attempts['hunt'] > restored.elapsed
+    assert restored.cooldown > 0
+
+
+def test_capture_completes_project_and_records_progress():
+    c=Collection()
+    c.project={'species':sid(16),'method':'grass','map':MAPS['ROUTE_1'],'key':'hunt'}
+    c.remaining=100
+    c.observe(state(owned=frozenset({1,16})))
+    assert c.project is None and c.history[-1]=='Completed: Pidgey'
+
+
+def test_readiness_for_postgame_uses_saved_hall_of_fame_count():
+    c=Collection()
+    c.observe(state(hall_of_fame_count=1))
+    assert c.completed_champion
+    assert c.details()['phase']=='Pokédex expeditions'
+
+
+def test_restricted_entries_are_not_counted_as_available():
+    c=Collection()
+    report=c.describe(state())
+    entries={e['dex']:e for e in report['entries']}
+    assert entries[151]['status']=='external'
+    assert entries[65]['status']=='external'
+    assert entries[4]['status']=='external'
+    assert entries[69]['status']=='unavailable'
+    assert entries[137]['status']=='available'
+
+
+@pytest.mark.parametrize('legacy_style', ['focused', 'balanced', 'thorough', 'invalid'])
+def test_legacy_style_uses_automatic_collection(legacy_style):
+    restored = Collection()
+    restored.load({'pace': legacy_style, 'completed_champion': True})
+    fresh = Collection()
+    fresh.completed_champion = True
+    s = state(map=MAPS['ROUTE_1'])
+    nav = Navigator()
+    nav.update_story(s)
+    main = Goal('boulder', 'Brock', 'Earn a badge')
+    expected = fresh.choose(s, nav, random.Random(3), main)
+    assert expected is not None
+    assert restored.choose(s, nav, random.Random(3), main) == expected
+    assert restored.remaining == fresh.remaining
+    assert 'pace' not in restored.state_dict()
+    assert 'pace' not in restored.describe(s)
+
+
+@pytest.mark.parametrize('legacy_style', ['focused', 'balanced', 'thorough'])
+def test_legacy_style_preserves_active_project_and_progress(legacy_style):
+    original = Collection()
+    original.project = {'species': sid(16), 'method': 'grass',
+                        'map': MAPS['ROUTE_1'], 'key': 'hunt'}
+    original.remaining = 500
+    original.cooldown = 120
+    original.elapsed = 9000
+    original.history = ['Completed: Caterpie']
+    saved = original.state_dict()
+    restored = Collection()
+    restored.load({**saved, 'pace': legacy_style})
+    assert restored.state_dict() == saved
+
+
+def test_nonattacking_evolution_partner_does_not_cause_healing_loop():
+    magikarp=mon(species=sid(129),moves=(150,),pp=(40,))
+    fighter=mon()
+    assert not needs_healing((magikarp,fighter))
+
+
+def test_training_withdraws_a_boxed_partner_before_evolution():
+    c=Collection()
+    parent=sid(10)
+    c.project={'method':'evolve','parent':parent,'species':sid(11),'box':2,'evolution':EVOS[parent][0],'key':'evo'}
+    s=state(stored_pokemon=((2,parent,6,'MOSS'),))
+    assert c.goal(s).key=='party_collection'
+    s=replace(s,party=s.party+(mon(species=parent,level=6),))
+    assert c.goal(s).key=='collect_train'
+
+
+def test_collection_can_use_the_indigo_lobby_pc_for_withdrawals_and_gifts():
+    c = Collection()
+    s = state(map=MAPS['INDIGO_PLATEAU_LOBBY'], x=8, y=10)
+    c.project = {'method': 'evolve', 'parent': sid(10), 'species': sid(11),
+                 'box': 2, 'evolution': EVOS[sid(10)][0]}
+    target = (s.map, 15, 8)
+    nav = Navigator()
+    nav.update_story(s)
+    goal = c.goal(s)
+    assert nav.route((s.map, s.x, s.y), goal.targets, s.frame) is not None
+    assert nav.path[-1][2] == target
+    c.project = {'method': 'gift', 'species': sid(133)}
+    assert target in c.goal(replace(s, party=s.party * 6)).targets
+
+
+def test_stone_project_buys_then_uses_the_correct_stone():
+    c=Collection()
+    parent=sid(44)
+    c.project={'method':'evolve','parent':parent,'species':sid(45),'box':None,'evolution':EVOS[parent][0],'key':'evo'}
+    s=state(party=(mon(species=parent, level=60),))
+    assert c.goal(s).key=='collect_stone'
+    s=replace(s,items=s.items+((ITEMS['LEAF_STONE'],1),))
+    assert c.goal(s).key=='collect_evolve'
+
+
+def test_pc_deposits_before_switching_to_a_full_source_box():
+    p=StrategicPolicy(1)
+    recorder=Recorder.on(p)
+    p.collection.project={'method':'evolve','parent':sid(10),'box':2}
+    p.goal=Goal('party_collection','Withdraw','Evolution')
+    s=state(party=(mon(),)*6,active_box=1,boxed_pokemon=())
+    mem=menu({1:'  WITHDRAW',3:'  DEPOSIT',5:'  RELEASE',7:'  CHANGE BOX'},(1,1),top=(1,1))
+    assert p._dispatch(s,Screen(mem),'pc',mem)[0]==PRESS
+    assert p.pc.operation=='deposit' and recorder.last.kind=='deposit_pokemon'
+
+
+def test_fossil_quest_walks_outside_while_lab_works():
+    c=Collection()
+    c.project={'method':'fossil','species':sid(138),'item':'HELIX_FOSSIL','fragment':'SCIENTIST1','map':MAPS['CINNABAR_LAB_FOSSIL_ROOM'],'key':'fossil'}
+    s=state(party=(mon(),),event_flags=flags('EVENT_GOT_POKEDEX','EVENT_GAVE_FOSSIL_TO_LAB','EVENT_LAB_STILL_REVIVING_FOSSIL'))
+    assert c.goal(s).key=='collect_fossil_walk'
+
+
+def test_coin_project_stages_and_cash_reserve():
+    c=Collection()
+    c.project={'method':'prize','species':sid(137),'key':'prize'}
+    assert c.goal(state()).key=='collect_coins'
+    s=state(items=((ITEMS['COIN_CASE'],1),),money=20000,coins=9999)
+    assert c.goal(s).key=='collect_prize'
+    c.remaining=100
+    assert c.goal(replace(s,coins=0,money=9000)) is None
+    assert c.remaining==0
+
+
+@pytest.mark.parametrize('version,cost', [('red',9999),('blue',6500),('yellow',9999)])
+def test_porygon_prize_cost_follows_the_cartridge(version,cost):
+    c=Collection()
+    c.version=version
+    c.project={'method':'prize','species':sid(137),'key':'prize'}
+    s=state(items=((ITEMS['COIN_CASE'],1),),money=20000,coins=6500)
+    assert c.goal(s).key==('collect_prize' if cost==6500 else 'collect_coins')
+    assert c.goal(replace(s,coins=cost)).key=='collect_prize'
+
+
+def test_snapshot_reads_coin_and_completion_bytes():
+    mem=bytearray(65536)
+    mem[0xD5A2]=2
+    mem[0xD5A4:0xD5A6]=bytes([0x65,0x00])
+    s=read_snapshot(mem,0)
+    assert s.coins==6500 and s.hall_of_fame_count==2
+
+
+def test_storage_records_read_banked_species_levels_and_names():
+    class Memory:
+        def __getitem__(self,key):
+            if key==W_CURRENT_BOX: return 0x80
+            if key==W_BOX_COUNT: return 0
+            if isinstance(key,tuple):
+                bank,address=key
+                if (bank,address)==(3,0xA000): return 1
+                if (bank,address)==(3,0xA016): return sid(10)
+                if (bank,address)==(3,0xA019): return 6
+                if 0xA386 <= address < 0xA391: return 0x50
+            return 0
+    assert read_stored_pokemon(Memory())==((6,sid(10),6,''),)
+
+
+@pytest.mark.parametrize('action,value', [
+    ('adventure_pace', 'focused'), ('adventure_pace', 'balanced'),
+    ('adventure_pace', 'thorough'), ('adventure_pace', 'invalid'),
+    ('exploration', 0), ('exploration', 0.12), ('exploration', 0.3),
+])
+def test_api_rejects_removed_behavior_controls(tmp_path, action, value):
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+    from fastapi import HTTPException
+    from pokesim.web.app import create_app, Control
+    emu = Mock()
+    app = create_app(emu, SimpleNamespace(shots=tmp_path, get=lambda *args: None))
+    endpoint = next(r.endpoint for r in app.routes if getattr(r, 'path', None) == '/api/control')
+    with pytest.raises(HTTPException) as error:
+        endpoint(Control(action=action, value=value))
+    assert error.value.status_code == 400
+    emu.command.assert_not_called()
+
+
+def test_evolution_project_does_not_block_restocking_at_another_mart():
+    p=StrategicPolicy(7)
+    parent=sid(44)
+    p.collection.project={'method':'evolve','parent':parent,'species':sid(45),'evolution':EVOS[parent][0]}
+    p.goal=Goal('collect_stone','Buy a stone','Evolve')
+    s=state(map=MAPS['LAVENDER_MART'],money=10000)
+    assert p._shopping_item(s,[ITEMS['SUPER_POTION']])==ITEMS['SUPER_POTION']
+    s=replace(s,map=MAPS['CELADON_MART_4F'])
+    assert p._shopping_item(s,[ITEMS['LEAF_STONE']])==ITEMS['LEAF_STONE']
+
+
+def test_stone_vendor_goal_is_reachable_from_the_shop_floor():
+    c=Collection()
+    parent=sid(44)
+    c.project={'method':'evolve','parent':parent,'species':sid(45),'evolution':EVOS[parent][0]}
+    s=state(map=MAPS['CELADON_MART_4F'],x=12,y=2,party=(mon(species=parent, level=60),))
+    goal=c.goal(s)
+    nav=Navigator()
+    nav.update_story(s)
+    assert nav.route((s.map,s.x,s.y),goal.targets,s.frame) is not None
+    assert goal.facing=='down'
+
+
+def test_evolution_training_leaves_gym_without_competing_lead_swaps():
+    from unittest.mock import Mock
+    p=StrategicPolicy(7)
+    recorder=Recorder.on(p)
+    parent=sid(17)
+    p.collection.project={'method':'evolve','parent':parent,'species':sid(18),'evolution':EVOS[parent][0]}
+    p.goal=Goal('collect_train','Train Pidgeotto','Evolution',((MAPS['ROUTE_1'],10,10),))
+    p.collection.choose=Mock(return_value=p.goal)
+    p.readiness={'lead':1}
+    p.development_index=1
+    p.development_until=10000
+    s=state(map=MAPS['VIRIDIAN_GYM'],x=3,y=1,
+            party=(mon(species=parent,level=33),mon(species=sid(3),level=57)),
+            items=((ITEMS['POKE_BALL'],10),(ITEMS['SUPER_POTION'],5)))
+    p.nav.update_story(s)
+    p._social_interaction=Mock(return_value=None)
+    action=p._overworld(s,bytearray(65536))
+    assert not recorder.started
+    assert action[0].button in ('up','down','left','right')
+    s=replace(s,party=s.party[::-1])
+    assert p._overworld(s,bytearray(65536))[0]==PRESS
+    assert recorder.last.kind=='reorder_party' and recorder.last.first==1
+
+
+def test_grass_targets_use_the_tilesets_own_grass_tile():
+    # Route 23 is PLATEAU, whose grass tile is 0x45. Treating every walkable tile as grass sent the
+    # run to tiles that can never produce an encounter, and it wandered until the project expired.
+    from pokesim.policies.collection import tiles, GRASS_TILES
+    from pokesim.strategy_data import WORLD
+
+    route23 = MAPS['ROUTE_23']
+    world = WORLD[route23]
+    assert world['tileset'] == 'PLATEAU'
+    targets = tiles({'map': route23, 'method': 'grass'})
+    walkable = sum(1 for row in world['tiles'] for tile in row if tile in world['passable'])
+    assert len(targets) == sum(1 for row in world['tiles'] for tile in row if tile == GRASS_TILES['PLATEAU'])
+    assert 0 < len(targets) < walkable / 10
+    assert all(world['tiles'][y][x] == 0x45 for _, x, y, _ in targets)
+
+    # An overworld route is unchanged, and a cave still counts every floor tile because Generation I
+    # has encounters everywhere underground.
+    assert all(WORLD[MAPS['ROUTE_1']]['tiles'][y][x] == 0x52
+               for _, x, y, _ in tiles({'map': MAPS['ROUTE_1'], 'method': 'grass'}))
+    cave = MAPS['VICTORY_ROAD_2F']
+    assert WORLD[cave]['tileset'] not in GRASS_TILES
+    assert len(tiles({'map': cave, 'method': 'grass'})) > 100
+
+
+def test_reload_rewind_does_not_silence_the_planner():
+    """A reload restores an older `elapsed`; the in-memory spacing guard must rewind with it.
+
+    Otherwise `elapsed - last_choice` stays negative for as long as the rewind, choose() declines
+    to plan, the collect_plan goal waits, and the run stands still until the next reload rewinds
+    it again — a loop the live Blue run spent half an hour in on 2026-09-14.
+    """
+    c=Collection()
+    c.elapsed=2_000_000
+    c.last_choice=c.elapsed            # as if it had just planned
+    older=dict(c.state_dict(),elapsed=1_400_000)
+    c.load(older)
+    assert c.elapsed - c.last_choice >= 600
+
+
+def test_moving_between_familiar_maps_cannot_extend_a_failed_expedition():
+    c = Collection()
+    c.project = {'method': 'grass', 'species': sid(132), 'key': 'ditto'}
+    c.remaining = 36000
+    for frame in range(0, 7500, 120):
+        c.observe(state(frame=frame, map=MAPS['ROUTE_1'] if frame % 240 else MAPS['ROUTE_2'], x=frame % 20))
+    assert c.project is None
+    assert c.attempts['ditto'] > c.elapsed
+    assert 'No encounter' in c.history[-1]
+
+
+def test_training_gains_keep_an_expedition_alive_and_idle_budget_survives_restore():
+    c = Collection()
+    c.project = {'method': 'grass', 'species': sid(132), 'key': 'ditto'}
+    c.remaining = 36000
+    for frame in range(0, 9000, 120):
+        c.observe(state(frame=frame, party=(mon(experience=frame // 3000),)))
+    assert c.project is not None
+    saved = c.state_dict()
+    restored = Collection()
+    restored.load(saved)
+    assert restored.idle_frames == c.idle_frames
+    assert restored.project_maps == c.project_maps
+
+
+def test_stationary_recovery_abandons_project_without_losing_game_progress():
+    p = StrategicPolicy(7)
+    p.collection.project = {'method': 'grass', 'species': sid(132), 'key': 'ditto'}
+    p.collection.elapsed = 10000
+    p.recover_stall(state(frame=300))
+    assert p.collection.project is None
+    assert p.collection.attempts['ditto'] > p.collection.elapsed
+    assert p.collection.elapsed - p.collection.last_choice >= 600
+    assert p.recoveries == 1
+
+
+def test_repeated_flags_do_not_count_as_fresh_expedition_progress():
+    c = Collection()
+    c.project = {'method': 'grass', 'species': sid(132), 'key': 'ditto'}
+    c.remaining = 36000
+    for frame in range(0, 7800, 120):
+        events = flags('EVENT_GOT_POKEDEX', 'EVENT_VICTORY_ROAD_2_BOULDER_ON_SWITCH1') if frame % 240 else flags('EVENT_GOT_POKEDEX')
+        c.observe(state(frame=frame, event_flags=events, x=frame % 20))
+    assert c.project is None
+    assert c.attempts['ditto'] > c.elapsed
+
+
+def test_unreachable_evolution_and_trainer_candidates_are_not_selected():
+    from unittest.mock import Mock
+    c = Collection()
+    c.completed_champion = True
+    nav = Navigator()
+    nav.distance_lookup = Mock(return_value=lambda targets: None)
+    s = state(map=MAPS['VICTORY_ROAD_2F'], money=100000)
+    c.observe(s)
+    assert c.choose(s, nav, random.Random(2), Goal('collect_plan', 'Plan', 'Plan')) is None
+    assert c.project is None
+
+
+@pytest.mark.parametrize('legacy_exploration', [0, 0.12, 0.3])
+def test_old_exploration_preferences_do_not_change_restored_adventures(legacy_exploration):
+    from copy import deepcopy
+    original = StrategicPolicy(7)
+    original.decisions = 123
+    original.collection.project = {'species': sid(16), 'method': 'grass',
+                                   'map': MAPS['ROUTE_1'], 'key': 'hunt'}
+    original.collection.remaining = 500
+    saved = original.state_dict()
+    expected = StrategicPolicy(7)
+    expected.load_state_dict(deepcopy(saved))
+    restored = StrategicPolicy(7)
+    restored.load_state_dict({**deepcopy(saved), 'exploration': legacy_exploration})
+    assert restored.state_dict() == expected.state_dict()
+    assert restored.collection.project == original.collection.project
+    assert restored.decisions == 123
+    assert 'exploration' not in restored.state_dict()
+    assert 'exploration' not in restored.details()
+
+
+def test_training_destinations_share_tiles_without_changing_level_or_version_rules(monkeypatch):
+    from pokesim.policies import collection
+    world = {map_id: {'symbol': symbol, 'tileset': 'CAVERN', 'tiles': [[0, 1, 0]],
+                     'passable': [0], 'warps': [[2, 0, 0, 0]]}
+             for map_id, symbol in ((900, 'EASY'), (901, 'HARD'), (902, 'CERULEAN_CAVE_1F'))}
+    sources = {'red': {'1': [{'method': 'grass', 'map': 900, 'level': 2},
+                            {'method': 'grass', 'map': 901, 'level': 20},
+                            {'method': 'grass', 'map': 902, 'level': 60}]},
+               'blue': {'1': [{'method': 'grass', 'map': 901, 'level': 2}]}}
+    monkeypatch.setattr(collection, 'WORLD', world)
+    monkeypatch.setattr(collection, 'DATA', {'versions': sources})
+    caches = (collection.training_targets, collection._training_map_targets, collection._training_tiles)
+    for cache in caches:
+        cache.cache_clear()
+    try:
+        low = collection.training_targets('red', 5)
+        assert low == ((900, 0, 0),)
+        assert collection.training_targets('red', 6) is low
+        high = collection.training_targets('red', 23)
+        assert high == ((901, 0, 0),)
+        assert collection.training_targets('red', 100) is high
+        assert collection.training_targets('blue', 5) is high
+        combined = collection._training_map_targets((900, 901))
+        assert combined == ((900, 0, 0), (901, 0, 0))
+        assert combined[0] is low[0]
+        assert combined[1] is high[0]
+    finally:
+        for cache in caches:
+            cache.cache_clear()
+
+
+def test_evolution_training_reuses_destinations_and_preserves_level_filters(monkeypatch):
+    from pokesim.policies import collection
+    world = {map_id: {'symbol': symbol, 'tileset': 'CAVERN', 'tiles': [[0, 1, 0]],
+                     'passable': [0], 'warps': [[2, 0, 0, 0]]}
+             for map_id, symbol in ((900, 'EASY'), (901, 'HARD'), (902, 'CERULEAN_CAVE_1F'))}
+    sources = {'red': {'1': [{'method': 'grass', 'map': 900, 'level': 2},
+                            {'method': 'grass', 'map': 901, 'level': 20},
+                            {'method': 'grass', 'map': 902, 'level': 20},
+                            {'method': 'surf', 'map': 900, 'level': 20}],
+                       '2': [{'method': 'grass', 'map': 900, 'level': 2}]},
+               'blue': {'1': [{'method': 'grass', 'map': 901, 'level': 2}]}}
+    monkeypatch.setattr(collection, 'WORLD', world)
+    monkeypatch.setattr(collection, 'DATA', {'versions': sources})
+    caches = (collection.evolution_training_targets,
+              collection._evolution_training_map_targets, collection._training_tiles)
+    for cache in caches:
+        cache.cache_clear()
+    try:
+        low = collection.evolution_training_targets('red', 5)
+        assert low == ((900, 0, 0),)
+        assert collection.evolution_training_targets('red', 6) is low
+        assert collection.evolution_training_targets('blue', 5) == ((901, 0, 0),)
+        assert collection.evolution_training_targets('red', 23) == ((901, 0, 0),)
+        assert collection.evolution_training_targets('red', 100) == ()
+        monkeypatch.setattr(collection, 'tiles', lambda source: pytest.fail('Repeated tile scan'))
+        assert collection.evolution_training_targets('red', 5) is low
+        assert collection.evolution_training_targets('red', 7) is low
+    finally:
+        for cache in caches:
+            cache.cache_clear()
+
+
+def snorlax_world(**kw):
+    from pokesim.policies.collection import SNORLAX_SOURCE
+    c = Collection()
+    c.completed_champion = True
+    c.returned_events = {'snorlax': {'dex': 143, 'room': MAPS['ROUTE_12'], 'item': None}}
+    items = tuple((ITEMS[n], q) for n, q in (('POKE_BALL', 10), ('ULTRA_BALL', 10), ('POKE_FLUTE', 1),
+                                             ('OLD_ROD', 1), ('GOOD_ROD', 1), ('SUPER_ROD', 1)))
+    base = dict(map=MAPS['ROUTE_12'], x=10, y=70, hall_of_fame_count=1, items=items,
+                owned=frozenset(range(1, 152)) - {143}, party=(mon(hp=200, max_hp=200, level=60),))
+    base.update(kw)
+    return c, state(**base), SNORLAX_SOURCE
+
+
+def test_returning_snorlax_needs_the_league_and_the_flute():
+    c, s, source = snorlax_world()
+    assert c.available(s, source)
+    assert not c.available(replace(s, items=tuple(i for i in s.items if i[0] != ITEMS['POKE_FLUTE'])), source)
+    c.completed_champion = False
+    assert not c.available(s, source)
+
+
+def test_missing_returning_snorlax_is_a_new_pokedex_entry():
+    from pokesim.policies.director import new_entry
+    c, s, _ = snorlax_world()
+    nav = Navigator()
+    nav.update_story(s)
+    c.elapsed = 10000
+    goal = c.choose(s, nav, random.Random(1), Goal('collect_plan', 'Plan', 'Plan'))
+    assert goal.key == 'collect_static' and c.project['event_return'] == 'snorlax'
+    assert new_entry(c.project)
+    # The flute tiles beside Snorlax are the targets.
+    assert set(goal.targets) == {(MAPS['ROUTE_12'], 10, 63), (MAPS['ROUTE_12'], 11, 62),
+                                 (MAPS['ROUTE_12'], 10, 61), (MAPS['ROUTE_12'], 9, 62)}
+
+
+def test_snorlax_battle_without_a_catch_ends_the_project():
+    c, s, _ = snorlax_world()
+    nav = Navigator()
+    nav.update_story(s)
+    c.elapsed = 10000
+    c.choose(s, nav, random.Random(1), Goal('collect_plan', 'Plan', 'Plan'))
+    c.observe(replace(s, event_flags=flags('EVENT_GOT_POKEDEX', 'EVENT_BEAT_ROUTE12_SNORLAX')))
+    assert c.project is None
+    assert c.history[-1].endswith('Snorlax battle ended without a catch')
+
+
+def test_story_comes_before_side_projects_until_the_champion():
+    """Seed 37 after Brock trained partners toward evolutions for four game hours instead of reaching Misty."""
+    from pokesim.policies.director import new_entry
+    from pokesim.policies.progression import story_goal
+    caterpie = mon(species=sid(10), level=6, hp=30, max_hp=30)
+    s = state(map=MAPS['ROUTE_3'], x=10, y=10, badges=1, owned=frozenset({1, 10}),
+              party=(mon(hp=100, max_hp=100, level=20), caterpie))
+    main = story_goal(s)
+    assert main.key == 'moon_trainer'
+    nav = Navigator()
+    nav.update_story(s)
+    before = Collection()
+    assert before.choose(s, nav, random.Random(3), main) is None
+    assert before.project is None
+    # A side project carried in an older save gives the turn back to the story.
+    before.project = {'method': 'evolve', 'parent': sid(10), 'species': sid(11),
+                      'evolution': EVOS[sid(10)][0], 'key': 'evo'}
+    before.last_choice = before.elapsed - 600
+    assert before.choose(s, nav, random.Random(3), main) is None
+    assert before.project is None and before.history[-1].startswith('Changed plan')
+    # After the Champion the same moment offers expeditions, and a missing entry still comes first.
+    chosen = []
+    for seed in range(8):
+        after = Collection()
+        after.completed_champion = True
+        assert after.choose(s, nav, random.Random(seed), main) is not None
+        chosen.append(after.project)
+    assert all(new_entry(project) for project in chosen)
+    assert {project['method'] for project in chosen} & {'grass', 'evolve'}

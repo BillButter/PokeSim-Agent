@@ -1,0 +1,69 @@
+"""The decoded Gen II region cache. Core tests the per-step memory snapshot itself."""
+import random
+from collections import defaultdict
+
+import pytest
+
+from pokesim_core.gen2 import ram
+from pokesim.gen2.data import GameData
+from pokesim_core.gen2.ram import Memory, read_snapshot
+
+SYMBOLS = {'wPartyCount': 1, 'wPartySpecies': 7, 'wPartyMons': 288, 'wPartyMonNicknames': 66, 'wCurBox': 1,
+           'wNumItems': 41, 'wNumBalls': 25, 'wNumKeyItems': 27, 'wTMsHMs': 57, 'wObjectStructs': 520,
+           'wMapGroup': 1, 'wMapNumber': 1, 'wEventFlags': 256, 'wMapObjects': 256, 'wPokedexSeen': 32,
+           'wPokedexCaught': 32, 'wDayCareMan': 1, 'wDayCareLady': 1, 'wBreedMon1': 32, 'wBreedMon1Nickname': 11,
+           'wBreedMon2': 32, 'wBreedMon2Nickname': 11, 'wRoamMon1': 7, 'wRoamMon2': 7, 'wRoamMon3': 7,
+           'wBattleMode': 1, 'wTilemap': 360, 'wXCoord': 1, 'wYCoord': 1, 'wPlayerName': 11, 'wRivalName': 11,
+           'wJohtoBadges': 1, 'wKantoBadges': 1, 'wMoney': 3, 'wCoins': 2, 'wEnemyMonSpecies': 1,
+           'wEnemyMonLevel': 1, 'wEnemyMonHP': 2, 'wEnemyMonMaxHP': 2, 'wTrainerClass': 1, 'wBattleType': 1,
+           'wGameTimeHours': 2, 'wGameTimeMinutes': 1, 'wGameTimeSeconds': 1, 'wHallOfFameCount': 1,
+           'wStepCount': 1, 'wHappinessStepCount': 1}
+
+
+def synthetic_data():
+    symbols, address = {}, 0xD000
+    for name, size in SYMBOLS.items():
+        symbols[name] = (1, address)
+        address += size
+    assert address <= 0xE000
+    symbols['sBox'] = (1, 0xA000)
+    for box in range(14):
+        symbols[f'sBox{box + 1}'] = (2 + box // 7, 0xA000 + box % 7 * 1102)
+    species = {str(i): {'name': f'Species {i}', 'stats': [40 + i % 60] * 6, 'types': [i % 17],
+                        'gender_ratio': i % 256, 'growth': 'MEDIUM_FAST'} for i in range(1, 252)}
+    moves = {str(i): {'name': f'Move {i}', 'pp': 5 + i % 35, 'type': i % 17} for i in range(1, 252)}
+    charmap = {str(i): chr(0x41 + i % 26) for i in range(0x80, 0xFA)}
+    return GameData({'game': 'gold', 'species': species, 'moves': moves, 'maps': {}, 'charmap': charmap,
+                     'item_attributes': {}, 'items': {}, 'types': {f'T{i}': i for i in range(17)}, 'events': {},
+                     'map_ids': {}, 'symbols': symbols, 'collisions': {}, 'permissions': {}})
+
+
+class BankedMemory:
+    def __init__(self):
+        self.banks = defaultdict(lambda: bytearray(65536))
+
+    def __getitem__(self, key):
+        bank, address = key if isinstance(key, tuple) else (0, key)
+        return self.banks[bank][address]
+
+    def __setitem__(self, key, value):
+        bank, address = key if isinstance(key, tuple) else (0, key)
+        self.banks[bank][address] = value
+
+
+def fill(memory, data, rng):
+    for name, (bank, address) in data.symbols.items():
+        size = 1102 if name.startswith('sBox') else SYMBOLS[name]
+        memory.banks[bank][address:address + size] = rng.randbytes(size)
+    memory.banks[1][data.symbols['wPartyCount'][1]] = rng.randrange(7)
+    memory.banks[1][data.symbols['wCurBox'][1]] = rng.randrange(14)
+    for name, (bank, address) in data.symbols.items():
+        if name.startswith('sBox'):
+            memory.banks[bank][address] = rng.randrange(21)
+    for name in ('wPartyMons',):
+        bank, address = data.symbols[name]
+        for slot in range(6):
+            memory.banks[bank][address + slot * 48] = rng.randrange(1, 252)
+            memory.banks[bank][address + slot * 48 + 31] = rng.randrange(1, 101)
+
+
