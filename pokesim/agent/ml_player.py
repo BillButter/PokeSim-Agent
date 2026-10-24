@@ -47,10 +47,11 @@ class MLPlayer:
         """
         self.move_count += 1
         
-        # Battle decisions
-        if game_state.get("battle") == "wild":
+        # Battle decisions (in_battle: 0=none, 1=wild, 2=trainer)
+        in_battle = game_state.get("in_battle", 0)
+        if in_battle == 1:
             return self._decide_wild_battle(game_state)
-        elif game_state.get("battle") == "trainer":
+        elif in_battle == 2:
             return self._decide_trainer_battle(game_state)
         
         # Overworld movement
@@ -108,9 +109,13 @@ class MLPlayer:
     
     def _decide_overworld_movement(self, state: dict[str, Any]) -> MLDecision:
         """Decide movement in overworld."""
-        map_id = state.get("map_id", 0)
-        badges = state.get("badges", 0)
+        # Use "map" not "map_id", and badges is a list not int
+        map_id = state.get("map", 0)
+        badges = state.get("badges", [])
         pokedex_owned = state.get("pokedex_owned", 0)
+        
+        # Convert badges list to int (count)
+        badge_count = len(badges) if badges else 0
         
         # Learning: prefer directions we've explored before
         known_exits = self.location_exits.get(map_id, [])
@@ -123,7 +128,9 @@ class MLPlayer:
         
         # Default: wander
         import random
-        random.seed(map_id + badges + self.move_count)
+        # Use badge count instead of raw badges, ensure all are ints
+        seed_value = max(0, int(map_id or 0)) + int(badge_count) + int(self.move_count or 0)
+        random.seed(seed_value)
         direction = random.choice(["up", "down", "left", "right"])
         
         # Record that we tried this direction
