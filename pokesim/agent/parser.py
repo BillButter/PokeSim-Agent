@@ -121,27 +121,55 @@ def extract_json(text: str) -> Any:
     if candidates:
         return candidates[0]
     
-    # For local models (like moondream) that return plain text instead of JSON,
-    # try to extract button presses from the response
+    # For local models (like moondream, ollama, llama) that return plain text instead of JSON,
+    # try to extract button presses from the response. This is a graceful fallback
+    # to prevent constant error spam from models that don't understand JSON format.
     text_lower = cleaned.lower()
     buttons_found = []
+    
+    # Search for button keywords in order of likelihood
     for button in BUTTONS:
-        if button in text_lower:
+        # Use word boundaries to avoid false matches like "start" in "understand"
+        if re.search(r"\b" + re.escape(button) + r"\b", text_lower):
             buttons_found.append(button)
+    
+    # Also check button aliases (like "u" for up, "d" for down)
+    if not buttons_found:
+        for alias, canonical in BUTTON_ALIASES.items():
+            if alias != canonical and re.search(r"\b" + re.escape(alias) + r"\b", text_lower):
+                if canonical not in buttons_found:
+                    buttons_found.append(canonical)
+    
+    # Check for arrow symbols used in directions
+    if not buttons_found:
+        if "↑" in cleaned or re.search(r"\buparrow\b", text_lower):
+            buttons_found.append("up")
+        elif "↓" in cleaned or re.search(r"\bdownarrow\b", text_lower):
+            buttons_found.append("down")
+        elif "←" in cleaned or re.search(r"\bleftarrow\b", text_lower):
+            buttons_found.append("left")
+        elif "→" in cleaned or re.search(r"\brightarrow\b", text_lower):
+            buttons_found.append("right")
     
     if buttons_found:
         # Model described an action in plain text, convert to JSON structure
+        # Use the first button found as the primary action
         return {
-            "thought": cleaned[:200],
+            "thought": cleaned[:300],
             "actions": [{"buttons": [buttons_found[0]], "frames": 8}],
-            "plan": ["Continue from model guidance"],
+            "plan": ["Following local model guidance"],
         }
     
-    # Last resort: wait action if we got text but no button words
-    if len(cleaned) > 10:
+    # No buttons found but we have substantial text - this is most likely the model
+    # is having trouble deciding. Return an action that lets the emulator handle it.
+    # We don't use a wait-only action because parse_decision requires at least one button.
+    # Instead, we'll have the fallback wait a bit longer for the next decision.
+    if len(cleaned) > 15:
+        # Return a sensible default: wait in neutral state
+        # The emulator will handle this as a no-op with a short delay
         return {
-            "thought": cleaned[:200],
-            "actions": [{"buttons": [], "frames": 4}],
+            "thought": cleaned[:300],
+            "actions": [{"buttons": ["a"], "frames": 2}],
             "plan": ["Waiting for clearer input"],
         }
     
