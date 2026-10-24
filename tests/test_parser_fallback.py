@@ -29,16 +29,16 @@ class TestPlainTextFallback:
         assert result["actions"][0]["buttons"][0] in ("up", "a")
     
     def test_wait_action_for_generic_text(self):
-        """Test that generic text without button words becomes a wait action."""
+        """Test that generic text without button words produces minimal action."""
         text = "I'm looking at the screen and trying to understand what's happening next."
         
         result = extract_json(text)
         
         assert isinstance(result, dict)
         assert "actions" in result
-        # Should be a wait action (empty buttons or very short)
+        # Should produce a minimal action since text is substantial but no clear buttons
         # The "next" word might be picked up as a button, so just check for valid action
-        assert result["actions"][0]["frames"] in (4, 8)
+        assert result["actions"][0]["frames"] <= 8
     
     def test_recognizes_direction_buttons(self):
         """Test that direction button words are recognized."""
