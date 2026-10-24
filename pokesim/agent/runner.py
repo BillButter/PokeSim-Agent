@@ -17,9 +17,11 @@ from typing import Any
 from ..ram import read_snapshot
 from .client import AIClientError, VisionClient, encode_png
 from .config import AgentConfig
+from .goals import inject_goals_into_prompt
 from .memory import RollingMemory, state_summary
 from .modes import AGENT_MODES, validate_ai_mode
 from .parser import ParseError, parse_decision
+from .prompts import system_prompt
 
 log = logging.getLogger(__name__)
 
@@ -50,8 +52,9 @@ def state_delta(previous: dict[str, Any] | None, current: dict[str, Any] | None)
 class VisionAgentRunner:
     """Own the model conversation and feed button sequences to the emulator."""
 
-    def __init__(self, emulator):
+    def __init__(self, emulator, goals: str = ""):
         self.emulator = emulator
+        self.goals = goals
         self.vision_config = AgentConfig.from_env()
         self.gemini_config = AgentConfig.gemini_from_env()
         tuning = self.vision_config
@@ -205,6 +208,7 @@ class VisionAgentRunner:
             max_actions=config.max_actions,
             max_frames=config.max_frames,
             active_plan=self._plan,
+            goals=self.goals,
         )
         decision = asyncio.run(VisionClient(config).complete(messages))
         if not self._active():

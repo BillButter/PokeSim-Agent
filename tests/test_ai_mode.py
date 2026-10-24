@@ -109,3 +109,72 @@ def test_quadlet_public_url_matches_its_published_address():
     unit = (root / 'deploy/pokesim-agent.container').read_text()
     assert 'PublishPort=127.0.0.1:8000:8000' in unit
     assert 'Environment=PUBLIC_URL=http://127.0.0.1:8000' in unit
+
+
+def test_goals_validate_and_format():
+    from pokesim.agent.goals import validate_goals, format_goals
+    
+    # Empty goals
+    assert validate_goals('') == ''
+    assert validate_goals(None) == ''
+    assert format_goals('') == ''
+    assert format_goals(None) == ''
+    
+    # Valid goals
+    goals_text = "Catch 10 Pokémon\nEarn 3 badges"
+    validated = validate_goals(goals_text)
+    assert validated == goals_text
+    
+    formatted = format_goals(goals_text)
+    assert 'Catch 10 Pokémon' in formatted
+    assert 'Earn 3 badges' in formatted
+    assert 'GOALS FOR THIS SESSION' in formatted
+    
+    # Too long goals rejected
+    long_goals = "x" * 2001
+    with pytest.raises(ValueError, match='too long'):
+        validate_goals(long_goals)
+
+
+def test_goals_injected_into_prompt():
+    from pokesim.agent.goals import inject_goals_into_prompt
+    
+    base_prompt = "HOW TO PLAY\nstuff\n\nOUTPUT\nmore stuff"
+    
+    # No goals: unchanged
+    assert inject_goals_into_prompt(base_prompt, "") == base_prompt
+    assert inject_goals_into_prompt(base_prompt, None) == base_prompt
+    
+    # With goals: injected before OUTPUT
+    with_goals = inject_goals_into_prompt(base_prompt, "Catch 5 Pokémon")
+    assert "GOALS FOR THIS SESSION" in with_goals
+    assert "Catch 5 Pokémon" in with_goals
+    assert with_goals.index("GOALS") < with_goals.index("OUTPUT")
+
+
+def test_adventure_settings_accepts_goals():
+    goals_text = "Earn all badges\nCatch 100 Pokémon"
+    result = Manager.validate_adventure_settings({'ai_goals': goals_text})
+    assert result['ai_goals'] == goals_text
+    
+    result2 = Manager.validate_adventure_settings({})
+    assert result2['ai_goals'] == ''
+
+
+def test_deployment_no_port_env():
+    root = Path(__file__).resolve().parents[1]
+    
+    # Dockerfile should not set PORT env
+    dockerfile = (root / 'Dockerfile').read_text()
+    assert 'PORT=8000 HOST=0.0.0.0' not in dockerfile
+    assert 'PORT=' not in dockerfile or 'AI_' in dockerfile  # only in context
+    
+    # Compose files should not have PORT env
+    for name in ['docker-compose.yml', 'docker-compose.ghcr.yml']:
+        compose = (root / name).read_text()
+        assert '      PORT:' not in compose
+        assert 'Environment=PORT=' not in compose
+    
+    # Quadlet should not have PORT env
+    unit = (root / 'deploy/pokesim-agent.container').read_text()
+    assert 'Environment=PORT=' not in unit

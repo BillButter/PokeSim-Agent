@@ -82,6 +82,7 @@ class Emulator:
         self.palette = validate_palette(getattr(config, 'PALETTE', 'original'))
         self.paused = False
         self.ai_mode = validate_ai_mode(getattr(config, 'AI_MODE', 'default'))
+        self.ai_goals = ''
         self.manual_mode = getattr(self, 'ai_mode', 'default') == 'manual'
         self.agent_actions: queue.Queue = queue.Queue(maxsize=8)
         self.agent_idle = threading.Event()
@@ -205,7 +206,7 @@ class Emulator:
     def _start_agent(self):
         from .agent.runner import VisionAgentRunner
         if self.agent_runner is None:
-            self.agent_runner = VisionAgentRunner(self)
+            self.agent_runner = VisionAgentRunner(self, goals=getattr(self, 'ai_goals', ''))
         self.agent_runner.start()
 
     def _clear_agent_actions(self):

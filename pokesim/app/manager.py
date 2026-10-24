@@ -102,12 +102,14 @@ class Manager:
         allowed = {'trainer_name', 'rival_name', 'speed', 'starter', 'policy', 'ai_mode', 'auto_start', 'seed', 'fast_text', 'battle_animations',
                    'autosave_seconds', 'keep_autosaves', 'stream_fps', 'viewer_only', 'league_rewards',
                    'mew_event', 'celebi_event', 'extra_store_items', 'fair_wild_dvs', 'legendary_return_steps', 'event_return_steps', 'mew_return_steps',
-                   'fossil_preference', 'dojo_preference', 'event_retention_days', 'palette'}
+                   'fossil_preference', 'dojo_preference', 'event_retention_days', 'palette', 'ai_goals'}
         if not isinstance(values, dict) or not set(values) <= allowed:
             raise ValueError('Unsupported adventure settings')
-        result = {'starter': 'random', 'policy': 'strategic', 'ai_mode': 'default', 'auto_start': False, **values}
+        result = {'starter': 'random', 'policy': 'strategic', 'ai_mode': 'default', 'auto_start': False, 'ai_goals': '', **values}
         from ..agent.modes import validate_ai_mode
         result['ai_mode'] = validate_ai_mode(result['ai_mode'])
+        from ..agent.goals import validate_goals
+        result['ai_goals'] = validate_goals(result.get('ai_goals', ''))
         from ..nicknames import validate_trainer_name
         for name in ('trainer_name', 'rival_name'):
             if name in result:

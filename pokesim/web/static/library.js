@@ -795,6 +795,7 @@
       const colour = johto || game.version === 'yellow'
       $('#settings-ai-mode').value = game.settings?.ai_mode || 'default'
       $('#settings-palette').value = game.settings?.palette || 'original'
+      $('#settings-ai-goals').value = game.settings?.ai_goals || ''
       // Yellow, Gold, Silver and Crystal already render in colour, so only Red and Blue offer a palette.
       $('#settings-palette-label').hidden = colour
       $('#settings-palette-note').hidden = colour
@@ -877,7 +878,7 @@
         for (const field of ['fossil_preference', 'dojo_preference']) delete rewards[field]
       }
       const result = await write(`/api/v1/adventures/${encodeURIComponent($('#settings-id').value)}`, {name: $('#settings-name').value.trim(),
-        settings: {auto_start: $('#settings-autostart').checked, ai_mode: $('#settings-ai-mode').value, speed: Number($('#settings-speed').value), ...($('#settings-palette').disabled ? {} : {palette: $('#settings-palette').value || 'original'}), ...rewards}}, 'PATCH')
+        settings: {auto_start: $('#settings-autostart').checked, ai_mode: $('#settings-ai-mode').value, ai_goals: $('#settings-ai-goals').value, speed: Number($('#settings-speed').value), ...($('#settings-palette').disabled ? {} : {palette: $('#settings-palette').value || 'original'}), ...rewards}}, 'PATCH')
       $('#adventure-settings').close()
       const pending = [result.pace_pending && 'speed', result.palette_pending && 'palette', result.ai_pending && 'AI player'].filter(Boolean).join(' and ')
       notice(pending ? `Settings saved. The ${pending} will apply when this adventure reconnects.` : 'Adventure settings saved.')

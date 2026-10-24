@@ -152,16 +152,20 @@ class RollingMemory:
         max_actions: int,
         max_frames: int,
         active_plan: list[str] | None = None,
+        goals: str = "",
     ) -> list[dict[str, Any]]:
         with self._lock:
             turns = list(self._turns)
             turn_number = self._next_turn
+        base_prompt = system_prompt(
+            game_title, max_actions=max_actions, max_frames=max_frames
+        )
+        from .goals import inject_goals_into_prompt
+        final_prompt = inject_goals_into_prompt(base_prompt, goals)
         messages: list[dict[str, Any]] = [
             {
                 "role": "system",
-                "content": system_prompt(
-                    game_title, max_actions=max_actions, max_frames=max_frames
-                ),
+                "content": final_prompt,
             }
         ]
         first_image_index = max(0, len(turns) - self.image_history)
