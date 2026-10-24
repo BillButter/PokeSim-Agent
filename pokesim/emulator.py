@@ -279,7 +279,8 @@ class Emulator:
 
     def status(self) -> dict:
         snap = self.snapshot
-        if getattr(self, 'ai_mode', 'default') == 'vision' and self.agent_runner is not None:
+        ai_mode = getattr(self, 'ai_mode', 'default')
+        if ai_mode in ('vision', 'gemini', 'ml') and self.agent_runner is not None:
             strategy = self.agent_runner.strategy()
             agent = self.agent_runner.public()
         else:
@@ -316,7 +317,8 @@ class Emulator:
         mode = self.policy.details().get('action', '')
         state = 'recovering' if (self.invalid_since or time.time() - self.last_reload < 30
                                  or mode == 'finding another approach') else 'making_progress' if age is not None and age < 120 else 'exploring'
-        if getattr(self, 'ai_mode', 'default') == 'vision' and self.agent_runner is not None:
+        ai_mode = getattr(self, 'ai_mode', 'default')
+        if ai_mode in ('vision', 'gemini', 'ml') and self.agent_runner is not None:
             agent_status = self.agent_runner.public().get('status')
             if agent_status == 'error':
                 state = 'recovering'

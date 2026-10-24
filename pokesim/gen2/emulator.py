@@ -1195,7 +1195,8 @@ class Emulator:
         waiting = live and self.waiting
         stalled = live and not waiting and (self.stall.stalled(self.frame, time.time()) or self.unstick_streak >= STALL_RELOADS)
         recovering = time.time() - self.last_reload < 30 or self.policy.mode == 'finding another approach'
-        if getattr(self, 'ai_mode', 'default') == 'vision' and self.agent_runner is not None:
+        ai_mode = getattr(self, 'ai_mode', 'default')
+        if ai_mode in ('vision', 'gemini', 'ml') and self.agent_runner is not None:
             agent = self.agent_runner.public()
             strategy = self.agent_runner.strategy()
             if agent.get('status') == 'error':
