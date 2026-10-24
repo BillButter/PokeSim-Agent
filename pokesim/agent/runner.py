@@ -21,6 +21,7 @@ from .goals import inject_goals_into_prompt
 from .memory import RollingMemory, state_summary
 from .modes import AGENT_MODES, validate_ai_mode
 from .parser import ParseError, parse_decision
+from .pause_detector import PauseDetector
 from .prompts import system_prompt
 
 log = logging.getLogger(__name__)
@@ -74,6 +75,7 @@ class VisionAgentRunner:
         self._turn = 0
         self._previous_state: dict[str, Any] | None = None
         self._last_game: str = ""
+        self._pause_detector = PauseDetector()
 
     def _config(self) -> AgentConfig:
         if getattr(self.emulator, "ai_mode", "vision") == "gemini":
@@ -111,6 +113,7 @@ class VisionAgentRunner:
             self._error = None
             if self._status in {"acting", "thinking"}:
                 self._status = "idle"
+        self._pause_detector.reset()
 
     # ---------------- public status ----------------
     def public(self) -> dict[str, Any]:
@@ -189,6 +192,11 @@ class VisionAgentRunner:
     def _turn_once(self) -> None:
         emu = self.emulator
         config = self._config()
+        
+        # Wait for game screen to stabilize before making a decision
+        if not self._wait_for_pause(emu):
+            return
+        
         self._set_status("thinking", None)
         snapshot, image = self._observe(emu)
         if snapshot is None:
@@ -251,6 +259,58 @@ class VisionAgentRunner:
         self._stop.wait(config.poll_interval)
         if self._active():
             self._set_status("idle")
+
+    def _wait_for_pause(self, emu) -> bool:
+        """Wait for game screen to stabilize (pause state) before requesting AI decision.
+        
+        This prevents the AI model from stalling the game rendering during animations
+        or mid-action sequences. We wait for the screen to remain mostly static for a
+        short duration, indicating the game is in a pause state (menu, dialogue, or
+        end of animation).
+        
+        Args:
+            emu: The emulator instance
+            
+        Returns:
+            True if pause detected and ready for decision, False if stopped
+        """
+        config = self._config()
+        poll_interval = config.poll_interval
+        max_wait_time = 30.0  # Don't wait more than 30 seconds
+        start_time = time.monotonic()
+        
+        log.debug("Waiting for game to pause before AI decision")
+        
+        while self._active() and time.monotonic() - start_time < max_wait_time:
+            # Capture current frame
+            _, image = self._observe(emu)
+            if image is None:
+                self._stop.wait(poll_interval)
+                continue
+            
+            # Convert image to bytes for pause detection
+            import io
+            from PIL import Image
+            
+            image_bytes = io.BytesIO()
+            image.save(image_bytes, format="PNG")
+            frame_data = image_bytes.getvalue()
+            
+            # Check if screen is in a pause state
+            if self._pause_detector.check_frame(frame_data):
+                elapsed = time.monotonic() - start_time
+                log.debug(f"Game pause detected after {elapsed:.2f}s - ready for AI decision")
+                return True
+            
+            # Wait before checking again
+            self._stop.wait(self._pause_detector.check_interval)
+        
+        if not self._active():
+            return False
+        
+        # Timeout reached, log and proceed anyway
+        log.warning("Timeout waiting for game pause (30s) - proceeding with AI decision anyway")
+        return True
 
     def _observe(self, emu):
         def capture():
