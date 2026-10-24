@@ -1,0 +1,180 @@
+# Docker Compose setup with Nginx Proxy Manager for PokeSim Agent
+# This allows remote access with optimal MJPEG streaming support
+#
+# Usage:
+#   docker-compose -f docker-compose-with-nginx.yml up -d
+#
+# Access:
+#   - PokeSim: http://pokesim.local:81 (NPM admin)
+#   - Nginx PM: http://localhost:81 (admin panel)
+#   - PokeSim direct: http://pokesim:8000 (internal)
+#
+# Notes:
+#   - Replace DOMAIN with your actual domain
+#   - Replace LETSENCRYPT_EMAIL with your email for HTTPS certificates
+#   - Default Nginx PM credentials: admin@example.com / changeme
+
+version: '3.9'
+
+services:
+  # PokeSim application
+  pokesim:
+    image: ghcr.io/billbutter/pokesim-agent:latest
+    container_name: pokesim-app
+    restart: unless-stopped
+    
+    # Expose only on internal network
+    networks:
+      - pokesim-network
+    ports:
+      # Only expose to nginx proxy manager
+      - "127.0.0.1:8000:8000"
+    
+    volumes:
+      # Persistent data
+      - pokesim_data:/root/.pokesim
+      # ROMs (optional)
+      - ./roms:/roms:ro
+      # Shared data with nginx proxy manager
+      - pokesim_shared:/shared:ro
+    
+    environment:
+      # PokeSim configuration
+      POKESIM_DATA: /root/.pokesim
+      
+      # AI configuration (optional)
+      AI_BASE_URL: http://ollama:11434
+      AI_MODEL: moondream
+      AI_API_KEY: ${AI_API_KEY:-}
+      
+      # Gemini configuration (optional)
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: gemini-2.0-flash-exp
+      
+      # Logging
+      LOG_LEVEL: INFO
+    
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '1'
+          memory: 1G
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health/ready"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    
+    depends_on:
+      - nginx-proxy-manager
+  
+  # Nginx Proxy Manager for reverse proxy with web UI
+  nginx-proxy-manager:
+    image: 'jc21/nginx-proxy-manager:latest'
+    container_name: nginx-proxy-manager
+    restart: unless-stopped
+    
+    networks:
+      - pokesim-network
+    ports:
+      # Admin UI
+      - "81:81"
+      # HTTP
+      - "80:80"
+      # HTTPS
+      - "443:443"
+    
+    volumes:
+      # Proxy manager data
+      - npm_data:/data
+      # SSL certificates
+      - npm_letsencrypt:/etc/letsencrypt
+      # Custom nginx config (if needed)
+      - ./nginx-pokesim-custom.conf:/etc/nginx/conf.d/pokesim-custom.conf:ro
+    
+    environment:
+      # Admin panel access
+      DB_SQLITE_FILE: /data/database.sqlite
+      DISABLE_IPV6: 'true'
+    
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+
+  # Optional: Ollama for local AI models
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    restart: unless-stopped
+    
+    networks:
+      - pokesim-network
+    ports:
+      # Only internal network
+      - "127.0.0.1:11434:11434"
+    
+    volumes:
+      - ollama_data:/root/.ollama
+    
+    environment:
+      OLLAMA_HOST: 0.0.0.0:11434
+    
+    # Optional: GPU support
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+    
+    # For CPU only
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 4G
+
+volumes:
+  pokesim_data:
+    driver: local
+  pokesim_shared:
+    driver: local
+  npm_data:
+    driver: local
+  npm_letsencrypt:
+    driver: local
+  ollama_data:
+    driver: local
+
+networks:
+  pokesim-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+# Configuration instructions:
+# 1. Start services: docker-compose -f docker-compose-with-nginx.yml up -d
+# 2. Access Nginx PM admin: http://localhost:81
+#    Default credentials: admin@example.com / changeme
+# 3. Create new Proxy Host:
+#    - Domain: pokesim.yourdomain.com
+#    - Forward Hostname: pokesim
+#    - Forward Port: 8000
+#    - SSL: Yes (Let's Encrypt)
+# 4. In the proxy host, go to Advanced tab and add:
+#    proxy_buffering off;
+#    proxy_set_header X-Accel-Buffering no;
+#    proxy_read_timeout 90s;
+# 5. Save and test: https://pokesim.yourdomain.com
