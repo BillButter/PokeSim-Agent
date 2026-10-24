@@ -11,6 +11,7 @@ import threading
 import time
 
 from .. import __version__, config
+from ..agent.modes import AGENT_MODES, validate_ai_mode
 from ..audio import AudioFeed
 from ..build_info import build_info
 from ..checkpoints import open_state
@@ -212,9 +213,7 @@ class Emulator:
         self.policy.trade_preferences = store.trade_preferences
         self.speed = config.SPEED
         self.paused = False
-        self.ai_mode = getattr(config, 'AI_MODE', 'default')
-        if self.ai_mode not in {'default', 'vision', 'manual'}:
-            raise ValueError('AI_MODE must be default, vision, or manual')
+        self.ai_mode = validate_ai_mode(getattr(config, 'AI_MODE', 'default'))
         self.manual_mode = getattr(self, 'ai_mode', 'default') == 'manual'
         self.agent_actions = queue.Queue(maxsize=8)
         self.agent_idle = threading.Event()
@@ -350,7 +349,7 @@ class Emulator:
             self.pb.stop(save=False)
             raise
         self.thread.start()
-        if self.ai_mode == 'vision':
+        if self.ai_mode in AGENT_MODES:
             self._start_agent()
 
     def _start_agent(self):
@@ -375,7 +374,7 @@ class Emulator:
             runner.reset()
 
     def enqueue_agent_actions(self, actions):
-        if self.ai_mode != 'vision' or self.manual_mode or self.paused:
+        if self.ai_mode not in AGENT_MODES or self.manual_mode or self.paused:
             return
         self.agent_idle.clear()
         try:
@@ -1113,7 +1112,7 @@ class Emulator:
                     self.agent_idle.set()
                     time.sleep(0.03)
                     continue
-                elif self.ai_mode == 'vision':
+                elif self.ai_mode in AGENT_MODES:
                     if not agent_pending:
                         try:
                             agent_pending = list(self.agent_actions.get_nowait())
@@ -1143,7 +1142,7 @@ class Emulator:
                             if button in BUTTONS:
                                 self.pb.button_release(button)
                     self._tick(2)
-                    if self.ai_mode == 'vision' and not agent_pending and self.agent_actions.empty():
+                    if self.ai_mode in AGENT_MODES and not agent_pending and self.agent_actions.empty():
                         self.agent_idle.set()
                 else:
                     if action.button:
@@ -1154,7 +1153,7 @@ class Emulator:
                         if action.button:
                             self.pb.button_release(action.button)
                     self._tick(action.gap)
-                    if self.ai_mode == 'vision' and not agent_pending and self.agent_actions.empty():
+                    if self.ai_mode in AGENT_MODES and not agent_pending and self.agent_actions.empty():
                         self.agent_idle.set()
                 if self.frame >= self._guard_frame:
                     self._guard_frame = self.frame + 60

@@ -106,8 +106,8 @@ class Manager:
         if not isinstance(values, dict) or not set(values) <= allowed:
             raise ValueError('Unsupported adventure settings')
         result = {'starter': 'random', 'policy': 'strategic', 'ai_mode': 'default', 'auto_start': False, **values}
-        if result['ai_mode'] not in {'default', 'vision', 'manual'}:
-            raise ValueError('Unknown AI player')
+        from ..agent.modes import validate_ai_mode
+        result['ai_mode'] = validate_ai_mode(result['ai_mode'])
         from ..nicknames import validate_trainer_name
         for name in ('trainer_name', 'rival_name'):
             if name in result:
@@ -1046,7 +1046,7 @@ def main(argv=None):
     args = parser.parse_args(argv)
     root = args.data_dir or (user_directory() / 'library' if args.desktop else Path(os.environ.get('POKESIM_APP_DIR', 'pokesim-app')))
     host = args.host or ('127.0.0.1' if args.desktop else os.environ.get('HOST', '127.0.0.1'))
-    port = args.port if args.port is not None else (0 if args.desktop else int(os.environ.get('PORT', '8000')))
+    port = args.port if args.port is not None else (0 if args.desktop else 8000)
     configure_logging(root)
     logging.getLogger('httpx').setLevel(logging.WARNING)
     import uvicorn

@@ -32,7 +32,7 @@ def completion_url(base_url: str) -> str:
         raise AIClientError("No model endpoint is configured")
     if base.endswith("/chat/completions"):
         return base
-    if base.endswith("/v1"):
+    if base.endswith(("/v1", "/openai")):
         return base + "/chat/completions"
     return base + "/v1/chat/completions"
 

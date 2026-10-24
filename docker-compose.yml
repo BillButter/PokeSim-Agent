@@ -8,10 +8,9 @@ services:
     ports:
       # Loopback only. Change to "8000:8000" only if you understand that the
       # Adventure Library has no authentication.
-      - "127.0.0.1:8000:8000"
+      - "127.0.0.1:${POKESIM_HOST_PORT:-8000}:8000"
     environment:
       HOST: 0.0.0.0
-      PORT: "8000"
       DATA_DIR: /data
       # Every .gb/.gbc/.zip in /roms is imported into the library at startup.
       ROM_DIR: /roms
@@ -25,7 +24,10 @@ services:
       AI_MAX_FRAMES: "${AI_MAX_FRAMES:-120}"
       AI_TEMPERATURE: "${AI_TEMPERATURE:-0.2}"
       AI_TIMEOUT: "${AI_TIMEOUT:-120}"
-      PUBLIC_URL: "${PUBLIC_URL:-http://127.0.0.1:8000}"
+      GEMINI_API_KEY: "${GEMINI_API_KEY:-}"
+      GEMINI_BASE_URL: "${GEMINI_BASE_URL:-}"
+      GEMINI_MODEL: "${GEMINI_MODEL:-}"
+      PUBLIC_URL: "${PUBLIC_URL:-http://127.0.0.1:${POKESIM_HOST_PORT:-8000}}"
     volumes:
       # ROMs are mounted read-only. Saves, settings, extracted sprites and
       # generated game data are written to /data.

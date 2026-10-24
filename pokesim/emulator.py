@@ -18,6 +18,7 @@ from pokesim_core.emulator import Emulator as CoreEmulator
 from .yellow import open_emulator
 
 from . import __version__, config
+from .agent.modes import AGENT_MODES, validate_ai_mode
 from .audio import AudioFeed, enable_checkpoint_sound
 from .build_info import build_info
 from .checkpoints import open_state
@@ -80,9 +81,7 @@ class Emulator:
         self.speed = config.SPEED
         self.palette = validate_palette(getattr(config, 'PALETTE', 'original'))
         self.paused = False
-        self.ai_mode = getattr(config, 'AI_MODE', 'default')
-        if self.ai_mode not in {'default', 'vision', 'manual'}:
-            raise ValueError('AI_MODE must be default, vision, or manual')
+        self.ai_mode = validate_ai_mode(getattr(config, 'AI_MODE', 'default'))
         self.manual_mode = getattr(self, 'ai_mode', 'default') == 'manual'
         self.agent_actions: queue.Queue = queue.Queue(maxsize=8)
         self.agent_idle = threading.Event()
@@ -191,7 +190,7 @@ class Emulator:
             from .runtime.preparation import restore
             restore(self)
         self.thread.start()
-        if self.ai_mode == 'vision':
+        if self.ai_mode in AGENT_MODES:
             self._start_agent()
 
     def stop(self):
@@ -225,7 +224,7 @@ class Emulator:
 
     def enqueue_agent_actions(self, actions):
         """Queue one model decision as ``(buttons, frames)`` pairs."""
-        if self.ai_mode != 'vision' or self.manual_mode or self.paused:
+        if self.ai_mode not in AGENT_MODES or self.manual_mode or self.paused:
             return
         self.agent_idle.clear()
         try:
@@ -1090,7 +1089,7 @@ class Emulator:
                     self.agent_idle.set()
                     time.sleep(0.1)
                     continue
-                elif self.ai_mode == 'vision':
+                elif self.ai_mode in AGENT_MODES:
                     if not agent_pending:
                         try:
                             agent_pending = list(self.agent_actions.get_nowait())
@@ -1150,7 +1149,7 @@ class Emulator:
                         after = read_snapshot(self.pb.memory, self.frame)
                         nav.observe((after.map, after.x, after.y), self.frame, bool(self.pb.memory[0xCFC5]),
                                     interrupted=bool(after.in_battle or after.textbox or after.start_menu))
-                if self.ai_mode == 'vision' and not agent_pending and self.agent_actions.empty():
+                if self.ai_mode in AGENT_MODES and not agent_pending and self.agent_actions.empty():
                     self.agent_idle.set()
                 now = time.time()
                 if now >= next_autosave:

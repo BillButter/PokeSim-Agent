@@ -198,7 +198,7 @@ async function refreshState() {
     set('#on-air-label', 'textContent', manualMode ? 'Manual' : paused ? 'Paused' : 'Live')
     set('#take-control', 'textContent', manualOnly ? 'Manual only' : manualMode ? 'Let AI play' : 'Take control')
     set('#take-control', 'disabled', manualOnly)
-    set('#control-mode', 'textContent', manualOnly ? 'Manual play' : manualMode ? 'You’re playing. AI paused' : paused ? 'Game paused' : aiMode === 'vision' ? 'Vision agent is playing' : 'AI is playing')
+    set('#control-mode', 'textContent', manualOnly ? 'Manual play' : manualMode ? 'You’re playing. AI paused' : paused ? 'Game paused' : aiMode === 'gemini' ? 'Gemini agent is playing' : aiMode === 'vision' ? 'Vision agent is playing' : 'AI is playing')
     $('#connection').classList.toggle('is-paused', paused)
     $('#connection').classList.remove('is-offline')
     set('#status', 'textContent', manualOnly ? 'Manual' : manualMode ? 'In control' : paused ? 'Paused' : 'Running')
@@ -246,7 +246,7 @@ async function refreshState() {
     set('#live-heading', 'textContent', game.map_name)
     set('#coordinates', 'textContent', `${game.x}, ${game.y}`)
     set('#game-activity', 'textContent', manualMode ? 'Your adventure. Your next move.' : paused ? game.enemy_shiny ? '★ Shiny encounter paused. Take control to choose what happens next.' : 'A moment to take it all in.' : game.in_battle ? game.opponent ? `Trainer battle, ${game.opponent}` : `Wild encounter${game.enemy_shiny ? ', ★ Shiny' : ''}, ${game.enemy || 'Pokémon'}, Lv. ${game.enemy_level}` : game.textbox ? 'A conversation along the way.' : game.start_menu ? 'Checking the essentials.' : 'Onward to the next little discovery.')
-    if (aiMode === 'vision' && !manualMode && !paused) {
+    if ((aiMode === 'vision' || aiMode === 'gemini') && !manualMode && !paused) {
       const agent = state.agent || {}
       if (agent.status === 'error') set('#game-activity', 'textContent', `Vision agent: ${agent.error || 'waiting for the model endpoint'}`)
       else if (agent.status === 'thinking') set('#game-activity', 'textContent', 'Vision agent is reading the screen and deciding the next move…')
@@ -518,7 +518,7 @@ setInterval(() => { if (!document.hidden) refreshEvents() }, 15000)
 function renderAgent(agent, aiMode, manualMode, paused) {
   const panel = $('#agent-panel')
   if (!panel) return
-  panel.hidden = aiMode !== 'vision'
+  panel.hidden = !(aiMode === 'vision' || aiMode === 'gemini')
   if (panel.hidden) return
   const details = agent && typeof agent === 'object' ? agent : {}
   const status = manualMode ? 'Manual control' : paused ? 'Paused' : ({thinking: 'Thinking', acting: 'Acting', error: 'Error', idle: 'Idle'}[details.status] || 'Starting')

@@ -92,8 +92,8 @@ def validate():
         raise ValueError("SPEED must be 0 for unlimited, or between 0.1 and 16")
     if POLICY not in {"strategic", "smart_random", "guided_random"}:
         raise ValueError("POLICY must be strategic, smart_random, or guided_random")
-    if AI_MODE not in {"default", "vision", "manual"}:
-        raise ValueError("AI_MODE must be default, vision, or manual")
+    from .agent.modes import validate_ai_mode
+    validate_ai_mode(AI_MODE)
     if not 1 <= AI_MAX_FRAMES <= 240:
         raise ValueError("AI_MAX_FRAMES must be between 1 and 240")
     if STARTER not in {"random", "bulbasaur", "charmander", "squirtle"}:

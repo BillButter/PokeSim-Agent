@@ -77,8 +77,8 @@ class SimulationSettings:
             raise ValueError('rom_path must point to a nonempty ROM file')
         if self.policy not in {'strategic', 'smart_random', 'guided_random'}:
             raise ValueError('Unknown simulation policy')
-        if self.ai_mode not in {'default', 'vision', 'manual'}:
-            raise ValueError('Unknown AI player')
+        from ..agent.modes import validate_ai_mode
+        object.__setattr__(self, 'ai_mode', validate_ai_mode(self.ai_mode))
         from ..cartridges import identify, validate_starter
         cartridge = identify(Path(self.rom_path).read_bytes())
         validate_starter(self.starter, cartridge.version if cartridge else None)

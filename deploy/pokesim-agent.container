@@ -23,7 +23,6 @@ Volume=%h/pokesim/data:/data:Z
 UserNS=keep-id:uid=1000,gid=1000
 
 Environment=HOST=0.0.0.0
-Environment=PORT=8000
 Environment=DATA_DIR=/data
 # Must match the address in your browser exactly, including the port.
 # Change this together with PublishPort if you expose the library remotely.
@@ -44,6 +43,9 @@ Environment=AI_MAX_ACTIONS=8
 Environment=AI_MAX_FRAMES=120
 Environment=AI_TEMPERATURE=0.2
 Environment=AI_TIMEOUT=120
+Environment=GEMINI_API_KEY=
+Environment=GEMINI_BASE_URL=
+Environment=GEMINI_MODEL=
 
 # The published image ships a HEALTHCHECK; kill an unhealthy container so
 # systemd restarts it.

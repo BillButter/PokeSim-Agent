@@ -18,17 +18,10 @@ from ..ram import read_snapshot
 from .client import AIClientError, VisionClient, encode_png
 from .config import AgentConfig
 from .memory import RollingMemory, state_summary
+from .modes import AGENT_MODES, validate_ai_mode
 from .parser import ParseError, parse_decision
 
 log = logging.getLogger(__name__)
-
-VALID_MODES = ("default", "vision", "manual")
-
-
-def validate_ai_mode(value: Any) -> str:
-    if not isinstance(value, str) or value not in VALID_MODES:
-        raise ValueError("AI player must be default, vision, or manual")
-    return value
 
 
 def state_delta(previous: dict[str, Any] | None, current: dict[str, Any] | None) -> dict[str, Any]:
@@ -59,10 +52,12 @@ class VisionAgentRunner:
 
     def __init__(self, emulator):
         self.emulator = emulator
-        self.config = AgentConfig.from_env()
+        self.vision_config = AgentConfig.from_env()
+        self.gemini_config = AgentConfig.gemini_from_env()
+        tuning = self.vision_config
         self.memory = RollingMemory(
-            max_turns=self.config.max_context_turns,
-            image_history=self.config.image_history,
+            max_turns=tuning.max_context_turns,
+            image_history=tuning.image_history,
         )
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
@@ -77,13 +72,23 @@ class VisionAgentRunner:
         self._previous_state: dict[str, Any] | None = None
         self._last_game: str = ""
 
+    def _config(self) -> AgentConfig:
+        if getattr(self.emulator, "ai_mode", "vision") == "gemini":
+            return self.gemini_config
+        return self.vision_config
+
     # ---------------- lifecycle ----------------
     def start(self) -> None:
         if self._thread and self._thread.is_alive():
             return
-        if not self.config.configured:
-            self._set_status("error", "Set AI_BASE_URL and AI_MODEL to use the vision agent.")
-            log.warning("vision agent selected without AI_BASE_URL/AI_MODEL")
+        config = self._config()
+        if not config.configured:
+            if config.provider == "gemini":
+                message = "Set GEMINI_API_KEY to use the Gemini agent."
+            else:
+                message = "Set AI_BASE_URL and AI_MODEL to use the vision agent."
+            self._set_status("error", message)
+            log.warning(message)
             return
         self._stop.clear()
         self._thread = threading.Thread(target=self._run, name="vision-agent", daemon=True)
@@ -106,14 +111,16 @@ class VisionAgentRunner:
 
     # ---------------- public status ----------------
     def public(self) -> dict[str, Any]:
+        config = self._config()
         with self._lock:
             return {
-                "mode": "vision",
+                "mode": getattr(self.emulator, "ai_mode", "vision"),
+                "provider": config.provider,
                 "status": self._status,
-                "configured": self.config.configured,
-                "base_url": self.config.base_url,
-                "model": self.config.model,
-                "has_api_key": bool(self.config.api_key),
+                "configured": config.configured,
+                "base_url": config.base_url,
+                "model": config.model,
+                "has_api_key": bool(config.api_key),
                 "thought": self._thought,
                 "plan": list(self._plan),
                 "memory": self._memory,
@@ -126,7 +133,8 @@ class VisionAgentRunner:
     def strategy(self) -> dict[str, Any]:
         status = self.public()
         plan = status["plan"]
-        objective = plan[0] if plan else "Vision agent"
+        fallback = "Gemini agent" if status["mode"] == "gemini" else "Vision agent"
+        objective = plan[0] if plan else fallback
         if status["status"] == "error" and status["error"]:
             reason = status["error"]
         elif status["status"] == "thinking":
@@ -149,7 +157,7 @@ class VisionAgentRunner:
     # ---------------- loop ----------------
     def _active(self) -> bool:
         emu = self.emulator
-        return (not self._stop.is_set() and getattr(emu, "ai_mode", "default") == "vision"
+        return (not self._stop.is_set() and getattr(emu, "ai_mode", "default") in AGENT_MODES
                 and not getattr(emu, "manual_mode", False) and not getattr(emu, "paused", False))
 
     def _set_status(self, status: str, error: str | None = None) -> None:
@@ -177,6 +185,7 @@ class VisionAgentRunner:
 
     def _turn_once(self) -> None:
         emu = self.emulator
+        config = self._config()
         self._set_status("thinking", None)
         snapshot, image = self._observe(emu)
         if snapshot is None:
@@ -193,20 +202,20 @@ class VisionAgentRunner:
             delta=delta,
             image_b64=image_b64,
             game_title=game_title,
-            max_actions=self.config.max_actions,
-            max_frames=self.config.max_frames,
+            max_actions=config.max_actions,
+            max_frames=config.max_frames,
             active_plan=self._plan,
         )
-        decision = asyncio.run(VisionClient(self.config).complete(messages))
+        decision = asyncio.run(VisionClient(config).complete(messages))
         if not self._active():
             self._set_status("idle")
             return
         parsed = parse_decision(
             decision,
-            max_actions=self.config.max_actions,
-            max_frames=self.config.max_frames,
+            max_actions=config.max_actions,
+            max_frames=config.max_frames,
         )
-        actions = [(list(action.buttons), max(1, min(self.config.max_frames, action.frames)))
+        actions = [(list(action.buttons), max(1, min(config.max_frames, action.frames)))
                    for action in parsed.actions]
         if not actions:
             raise ParseError("The model did not choose an action")
@@ -235,7 +244,7 @@ class VisionAgentRunner:
             if emu.agent_actions.empty() and emu.agent_idle.is_set():
                 break
             self._stop.wait(0.2)
-        self._stop.wait(self.config.poll_interval)
+        self._stop.wait(config.poll_interval)
         if self._active():
             self._set_status("idle")
 
