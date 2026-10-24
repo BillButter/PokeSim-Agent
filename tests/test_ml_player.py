@@ -38,8 +38,9 @@ class TestMLPlayer:
         """Test player initializes correctly."""
         player = MLPlayer()
         assert player.move_count == 0
-        assert player.battle_moves_learned == {}
-        assert player.location_exits == {}
+        assert player.q_values == {}
+        assert player.location_map == {}
+        assert player.exploration_rate == 0.8
     
     def test_basic_overworld_state(self):
         """Test decision with basic overworld state."""
@@ -161,8 +162,8 @@ class TestMLPlayer:
         self.player.decide(state1)
         
         # Should have learned about this location
-        assert 1 in self.player.location_exits
-        assert len(self.player.location_exits[1]) > 0
+        assert 1 in self.player.location_map
+        assert self.player.location_map[1] is not None
     
     def test_badges_handling(self):
         """Test player handles badges list correctly."""
@@ -189,18 +190,20 @@ class TestMLPlayer:
     def test_learn_from_catch(self):
         """Test player learns from successful catches."""
         state = {"map": 1, "badges": []}
-        initial_value = self.player.battle_moves_learned.get("catch", 0)
+        self.player.decide(state)
+        initial_reward = self.player.total_reward
         self.player.learn_from_turn("caught Pidgeotto", state)
-        new_value = self.player.battle_moves_learned.get("catch", 0)
-        assert new_value > initial_value
+        new_reward = self.player.total_reward
+        assert new_reward > initial_reward  # Positive reward for catch
     
     def test_learn_from_defeat(self):
         """Test player learns from victories."""
         state = {"map": 1, "badges": []}
-        initial_value = self.player.battle_moves_learned.get("defeat", 0)
+        self.player.decide(state)
+        initial_reward = self.player.total_reward
         self.player.learn_from_turn("defeated Trainer's Pikachu", state)
-        new_value = self.player.battle_moves_learned.get("defeat", 0)
-        assert new_value > initial_value
+        new_reward = self.player.total_reward
+        assert new_reward > initial_reward  # Positive reward for victory
     
     def test_summary_output(self):
         """Test summary generation."""
@@ -208,8 +211,8 @@ class TestMLPlayer:
         assert isinstance(summary, str)
         assert "ML Player" in summary or "moves" in summary.lower()
     
-    def test_consistent_movement_with_seed(self):
-        """Test movement is consistent with same seed."""
+    def test_movement_exploration(self):
+        """Test that player explores directions."""
         state = {
             "in_battle": 0,
             "textbox": False,
@@ -218,14 +221,18 @@ class TestMLPlayer:
             "badges": [],
         }
         
-        player1 = MLPlayer()
-        decision1 = player1.decide(state)
+        player = MLPlayer()
         
-        player2 = MLPlayer()
-        decision2 = player2.decide(state)
+        # Collect movements
+        directions = []
+        for _ in range(20):
+            decision = player.decide(state)
+            if decision.buttons:
+                directions.append(decision.buttons[0])
         
-        # Same initial state should produce same first move (same seed)
-        assert decision1.buttons == decision2.buttons
+        # Should have tried multiple directions during exploration
+        unique_dirs = set(directions)
+        assert len(unique_dirs) > 1, "Should explore multiple directions"
     
     def test_party_safety(self):
         """Test player handles empty or missing party."""
