@@ -1,14 +1,16 @@
 # Agent architecture
 
 This fork keeps PokeSim's upstream Adventure Library, emulator workers, strategic
-autopilot and per-adventure settings. It adds one optional feature: each adventure
+autopilot and per-adventure settings. It adds an optional feature: each adventure
 can choose which player drives the emulator.
 
-| `ai_mode` | Player | Network |
-| --- | --- | --- |
-| `default` | Upstream PokeSim `StrategicPolicy` (the original autopilot) | None |
-| `vision` | OpenAI-compatible vision agent | Model endpoint only |
-| `manual` | Keyboard and on-screen controls only | None |
+| `ai_mode` | Player | Network | Config |
+| --- | --- | --- | --- |
+| `default` | Upstream PokeSim `StrategicPolicy` (the original autopilot) | None | None |
+| `vision` | OpenAI-compatible vision agent | Model endpoint | `AI_BASE_URL`, `AI_MODEL`, `AI_API_KEY` |
+| `gemini` | Google Gemini vision agent | Google API | `GEMINI_API_KEY`, optional `GEMINI_BASE_URL`, `GEMINI_MODEL` |
+| `ml` | Local decision-tree machine learning player | None | None |
+| `manual` | Keyboard and on-screen controls only | None | None |
 
 `default` is first in every selector and is the fallback for old adventures that
 have no stored `ai_mode`.
@@ -33,39 +35,57 @@ Each adventure runs in its own worker process. The worker owns exactly one
 emulator thread; the FastAPI process never touches the emulator's PyBoy object
 directly. The supervisor starts, monitors, and reconciles workers.
 
-## Where the vision agent sits
+## Where the agents sit
 
-The agent is implemented under `pokesim/agent/`:
+All agents are implemented under `pokesim/agent/`:
 
-- `config.py` reads the server-wide `AI_*` environment.
+### Vision and Gemini agents (remote models)
+
+- `config.py` reads server-wide configuration (`AI_*`, `GEMINI_*`).
 - `client.py` posts to an OpenAI-compatible `/chat/completions` endpoint.
 - `parser.py` validates the structured decision JSON.
 - `memory.py` keeps a bounded rolling conversation.
 - `prompts.py` builds the system prompt and compact state text.
 - `runner.py` runs one observation/decision loop per adventure.
+- `goals.py` injects optional per-adventure goals into prompts.
 
-When an adventure's `ai_mode` becomes `vision`, the emulator starts a
+When an adventure's `ai_mode` becomes `vision` or `gemini`, the emulator starts a
 `VisionAgentRunner` thread. The runner does not press buttons itself. It:
 
 1. captures a snapshot and a 160x144 RGB image through `Emulator.call()`, so the
    read happens on the emulator thread;
 2. sends the screenshot, compact state, state delta, plan and recent memory to the
-   model;
+   remote model (with optional goals injected);
 3. parses a short list of `(buttons, frames)` actions;
 4. queues that list on the emulator's `agent_actions` queue.
 
+### ML agent (local learning)
+
+- `ml_player.py` implements decision-tree logic for autonomous gameplay.
+- `ml_runner.py` runs the observation/decision loop locally without network.
+- Learns from gameplay patterns and decision outcomes.
+- Makes decisions for battles (wild, trainer) and overworld exploration.
+- No external dependencies or API keys required.
+
+When an adventure's `ai_mode` becomes `ml`, the emulator starts an
+`MLAgentRunner` thread. It captures game state and uses the ML player to decide
+actions without contacting any remote service.
+
+### Shared behavior
+
 The emulator's normal control loop consumes one queued action at a time exactly
-like a policy action, then publishes frames and state as usual. While the model is
-thinking, the game waits rather than running a different policy underneath it.
+like a policy action, then publishes frames and state as usual. While any agent
+is thinking, the game waits rather than running a different policy underneath it.
 
 Switching modes is live:
 
 - `default` clears queued agent actions and returns to the upstream policy.
-- `vision` clears queued actions and starts or resumes the runner.
+- `vision` or `gemini` clears queued actions and starts or resumes the remote agent.
+- `ml` clears queued actions and starts or resumes the local learner.
 - `manual` clears queued actions and leaves the emulator waiting for input.
 
 Pause, take control, resume, restart and worker reconciliation all clear the
-agent queue. Taking control pauses the vision agent; resuming returns to the mode
+agent queue. Taking control pauses any agent; resuming returns to the mode
 stored for that adventure.
 
 ## Decision format
@@ -92,14 +112,16 @@ a different player.
 
 ## Configuration
 
-The endpoint is server-wide, because API keys should not be stored in adventure
+### Remote agent endpoints
+
+Endpoints are server-wide, because API keys should not be stored in adventure
 records:
 
 | Variable | Meaning |
 | --- | --- |
-| `AI_BASE_URL` | Base URL, for example `http://localhost:11434/v1` |
-| `AI_API_KEY` | Optional bearer token |
-| `AI_MODEL` | Vision-capable model name |
+| `AI_BASE_URL` | OpenAI-compatible base URL, e.g. `http://localhost:11434/v1` |
+| `AI_API_KEY` | Optional bearer token for vision endpoint |
+| `AI_MODEL` | Vision-capable model name (required for vision mode) |
 | `AI_POLL_INTERVAL` | Seconds between observations (default 4) |
 | `AI_MAX_CONTEXT_TURNS` | Rolling text turns (default 8) |
 | `AI_IMAGE_HISTORY` | Recent screenshots reattached (default 2) |
@@ -108,14 +130,39 @@ records:
 | `AI_TEMPERATURE` | Sampling temperature (default 0.2) |
 | `AI_TIMEOUT` | Request timeout in seconds (default 120) |
 
+| Variable | Meaning |
+| --- | --- |
+| `GEMINI_API_KEY` | Google Gemini API key (required for gemini mode) |
+| `GEMINI_BASE_URL` | Optional custom Gemini endpoint base URL |
+| `GEMINI_MODEL` | Model name (default `gemini-2.5-flash`) |
+
+### Local ML agent
+
+The ML agent requires no configuration. It runs entirely locally with no network
+calls or external dependencies. Enable it by selecting `ml` mode in adventure
+settings.
+
+### Per-adventure goals
+
+Optional per-adventure goals (max 2000 chars) guide vision and Gemini agents:
+
+| Variable | Meaning |
+| --- | --- |
+| `ai_goals` | String of goals, one per line (stored in adventure settings) |
+
+Goals are formatted as a bullet list and injected into the system prompt for
+vision and Gemini agents. Leave empty for fully autonomous play.
+
+### Mode selection
+
 Each managed adventure defaults to `default`; its selected AI player is stored
 in the upstream adventure settings and can be changed while the adventure runs.
 The standalone runtime also accepts `AI_MODE`, but the managed library does not
 use it.
 
-A missing endpoint or model is not fatal. The library still works, `default` and
-`manual` adventures still run, and a vision adventure reports the configuration
-error in its dashboard.
+A missing endpoint or model is not fatal. The library still works, `default`,
+`ml`, and `manual` adventures always run. A vision or gemini adventure reports
+the configuration error in its dashboard if the endpoint is unavailable.
 
 ## API additions
 

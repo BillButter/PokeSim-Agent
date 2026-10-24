@@ -1,6 +1,6 @@
 # PokeSim Agent
 
-**PokeSim's original autopilot, plus an optional OpenAI-compatible vision player.**
+**PokeSim's original autopilot, plus optional OpenAI, Gemini, and local ML agents.**
 
 ![A live Crystal adventure with all 16 badges and 251 Pokémon registered, battling Bruno of the Elite Four](docs/images/gen2-live.gif)
 
@@ -9,21 +9,27 @@ your browser. Take control whenever you like, then hand the adventure back.
 
 This fork is built on upstream PokeSim. The default player is the upstream
 `StrategicPolicy`, so existing adventures behave exactly like original PokeSim.
-Each adventure can instead use a vision agent backed by any OpenAI-compatible
-endpoint, or stay in manual mode. The emulator, library, settings, trading and
+Each adventure can use different AI strategies: strategic default autopilot,
+vision model (any OpenAI-compatible endpoint), Gemini (Google's AI), local
+machine learning, or manual play. Optionally set per-adventure goals to guide
+the vision and remote agents. The emulator, library, settings, trading and
 statistics are upstream PokeSim's.
 
-## Three ways to play each adventure
+## Five ways to play each adventure
 
-| AI player | What runs |
-| --- | --- |
-| **Default** | Upstream PokeSim's strategic autopilot, unchanged. No model endpoint. |
-| **Vision agent** | Screenshots and compact game state go to an OpenAI-compatible vision model. |
-| **Manual only** | The game waits for your keyboard and on-screen controls. |
+| AI player | Configuration | Network |
+| --- | --- | --- |
+| **Default** | Upstream strategic autopilot, unchanged | None |
+| **Vision agent** | OpenAI-compatible endpoint via `AI_BASE_URL`, `AI_MODEL`, `AI_API_KEY` | Yes |
+| **Gemini agent** | Google Gemini via `GEMINI_API_KEY` (optional `GEMINI_BASE_URL`, `GEMINI_MODEL`) | Yes |
+| **ML agent** | Local machine learning player with decision-tree learning | None |
+| **Manual only** | You control the game via keyboard and on-screen buttons | None |
 
 Choose the player when creating an adventure, then switch live in **Adventure
-settings**. The server-wide endpoint is configured with `AI_BASE_URL`,
-`AI_MODEL` and `AI_API_KEY`; see [agent architecture](docs/AGENT-ARCHITECTURE.md).
+settings**. Optional per-adventure goals (max 2000 chars) guide vision and
+Gemini agents. ML agent learns from gameplay patterns without external services.
+See [agent architecture](docs/AGENT-ARCHITECTURE.md) and
+[original PokeSim](https://github.com/afk-sapien/PokeSim).
 
 ## Keep the adventure going
 
