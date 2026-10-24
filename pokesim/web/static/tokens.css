@@ -133,8 +133,8 @@
   --ink-2: #3B3F39;
   --ink-3: #4B4F48;
 
-  --signal: #8A3110;
-  --signal-lamp: #C2521E;
+  --signal: #32DD00;
+  --signal-lamp: #50FF00;
   --ok: #24572F;
   --ok-lamp: #2E7A3D;
   --warn: #634707;
@@ -149,8 +149,8 @@
 
   --bevel-hi: rgba(255, 255, 255, 0.60);
   --bevel-lo: rgba(28, 26, 20, 0.16);
-  --wash: rgba(138, 49, 16, 0.10);
-  --focus: #8A3110;
+  --wash: rgba(50, 221, 0, 0.10);
+  --focus: #32DD00;
   --focus-halo: #F5F3EC;
   --stipple: rgba(28, 26, 20, 0.14);
 
@@ -193,8 +193,8 @@
   --ink-2: #AEB2A9;
   --ink-3: #8D9289;
 
-  --signal: #F0913F;
-  --signal-lamp: #F0913F;
+  --signal: #32DD00;
+  --signal-lamp: #50FF00;
   --ok: #72C983;
   --ok-lamp: #72C983;
   --warn: #DDB350;
@@ -209,8 +209,8 @@
 
   --bevel-hi: rgba(224, 232, 216, 0.07);
   --bevel-lo: rgba(0, 0, 0, 0.75);
-  --wash: rgba(240, 145, 63, 0.14);
-  --focus: #F0913F;
+  --wash: rgba(50, 221, 0, 0.14);
+  --focus: #32DD00;
   --focus-halo: #0A0C0A;
   --stipple: rgba(224, 232, 216, 0.10);
 
@@ -232,8 +232,8 @@
     --ink: #DEE1D8;
     --ink-2: #AEB2A9;
     --ink-3: #8D9289;
-    --signal: #F0913F;
-    --signal-lamp: #F0913F;
+    --signal: #32DD00;
+    --signal-lamp: #50FF00;
     --ok: #72C983;
     --ok-lamp: #72C983;
     --warn: #DDB350;
@@ -246,8 +246,8 @@
     --cell-off: #2B2F2A;
     --bevel-hi: rgba(224, 232, 216, 0.07);
     --bevel-lo: rgba(0, 0, 0, 0.75);
-    --wash: rgba(240, 145, 63, 0.14);
-    --focus: #F0913F;
+    --wash: rgba(50, 221, 0, 0.14);
+    --focus: #32DD00;
     --focus-halo: #0A0C0A;
     --stipple: rgba(224, 232, 216, 0.10);
     --plate: #8F8C84;

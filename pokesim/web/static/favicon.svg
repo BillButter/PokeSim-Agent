@@ -1,8 +1,13 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="pokesim">
-  <title>pokesim</title>
-  <rect width="64" height="64" rx="14" fill="#bc4734"/>
-  <!-- A handheld reduced to what survives sixteen pixels: the screen, and one button under it.
-       Anything thinner than about four units disappears at that size, so the pad is gone. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="PokeSim Agent">
+  <title>PokeSim Agent</title>
+  <!-- Background: rounded square with lime green -->
+  <rect width="64" height="64" rx="14" fill="#32DD00"/>
+  <!-- Game Boy screen frame in cream -->
   <rect x="10" y="10" width="44" height="30" rx="5" fill="#fffdf4"/>
-  <circle cx="32" cy="50" r="7" fill="#fffdf4"/>
+  <!-- Screen glass with subtle gradient effect -->
+  <rect x="11" y="11" width="42" height="28" rx="4" fill="#c8e6c9" opacity="0.3"/>
+  <!-- Action button (A) below screen in lime green -->
+  <circle cx="32" cy="50" r="7" fill="#32DD00"/>
+  <!-- Inner button highlight -->
+  <circle cx="32" cy="50" r="5" fill="#50FF00" opacity="0.6"/>
 </svg>

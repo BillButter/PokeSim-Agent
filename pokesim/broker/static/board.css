@@ -42,14 +42,14 @@ dl,dd { margin:0 }
 .brand-mark { place-items:center }
 .brand-mark { width:38px }
 .brand-mark { height:38px }
-.brand-mark { background:#bc4734 }
+.brand-mark { background:#32DD00 }
 .brand-mark { color:#fffdf4 }
 .brand-mark { border-radius:11px }
 .brand-mark { font-size:28px }
 .brand-mark { padding-bottom:4px }
 .brand-edition { font:9px ui-monospace,monospace }
 .brand-edition { letter-spacing:1px }
-.brand-edition { color:#a7503d }
+.brand-edition { color:#32DD00 }
 .brand-edition { border-left:1px solid #d8d7cd }
 .brand-edition { padding-left:14px }
 
@@ -73,7 +73,7 @@ main { padding:0 24px 48px }
 .run h2 { margin:6px 0 8px }
 .run-note { color:#7c8175 }
 .run-note { font-size:12px }
-.run-down { color:#a7503d }
+.run-down { color:#32DD00 }
 .run dl { display:grid }
 .run dl { grid-template-columns:repeat(3,minmax(0,1fr)) }
 .run dl { gap:12px }
@@ -91,16 +91,16 @@ main { padding:0 24px 48px }
 .deal { border:1px solid #dcded3 }
 .deal { border-radius:16px }
 .deal { margin-bottom:12px }
-.deal-premium { border-color:#c9b48a }
-.deal-premium { background:#fffcf1 }
+.deal-premium { border-color:#32DD00 }
+.deal-premium { background:#f0ffeb }
 .price { color:#77796f }
-.deal-premium .price { color:#8a6a26 }
+.deal-premium .price { color:#32DD00 }
 .chip { margin-left:10px }
 .chip { padding:2px 8px }
 .chip { border:1px solid #e0c3ba }
 .chip { border-radius:999px }
 .chip { background:#fbf0ec }
-.chip { color:#a7503d }
+.chip { color:#32DD00 }
 
 .swap { display:grid }
 .swap { grid-template-columns:1fr auto 1fr }
@@ -121,7 +121,7 @@ main { padding:0 24px 48px }
 .side h3 { margin:3px 0 4px }
 .side-meta { font-size:12px }
 .side-meta { color:#7c8175 }
-.side-keeper { color:#a7503d }
+.side-keeper { color:#32DD00 }
 .side-keeper { font-weight:600 }
 
 .reason { border-top:1px solid #eceade }
