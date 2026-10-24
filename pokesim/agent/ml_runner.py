@@ -7,7 +7,6 @@ import threading
 import time
 from typing import Any
 
-from ..ram import read_snapshot
 from .ml_player import MLPlayer
 from .modes import AGENT_MODES
 
@@ -89,6 +88,8 @@ class MLAgentRunner:
 
     def _active(self) -> bool:
         emu = self.emulator
+        if emu is None:
+            return False
         return (not self._stop.is_set() and getattr(emu, "ai_mode", "default") in AGENT_MODES
                 and not getattr(emu, "manual_mode", False) and not getattr(emu, "paused", False))
 
@@ -122,6 +123,7 @@ class MLAgentRunner:
             if getattr(emu, "generation", 1) == 2:
                 snapshot = emu._read()
             else:
+                from ..ram import read_snapshot
                 snapshot = read_snapshot(emu.pb.memory, emu.frame)
             return snapshot
 
@@ -162,7 +164,8 @@ class MLAgentRunner:
         # Let emulator finish actions
         deadline = time.monotonic() + 5.0
         while self._active() and time.monotonic() < deadline:
-            if emu.agent_actions.empty() and emu.agent_idle.is_set():
+            if (hasattr(emu, 'agent_actions') and hasattr(emu, 'agent_idle') and
+                emu.agent_actions.empty() and emu.agent_idle.is_set()):
                 break
             self._stop.wait(0.2)
 

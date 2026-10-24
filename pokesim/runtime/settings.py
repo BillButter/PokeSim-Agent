@@ -32,6 +32,7 @@ class SimulationSettings:
     speed: float = 1
     policy: str = 'strategic'
     ai_mode: str = 'default'
+    ai_goals: str = ''
     palette: str = 'original'
     viewer_only: bool = False
     league_rewards: bool = False
@@ -79,6 +80,8 @@ class SimulationSettings:
             raise ValueError('Unknown simulation policy')
         from ..agent.modes import validate_ai_mode
         object.__setattr__(self, 'ai_mode', validate_ai_mode(self.ai_mode))
+        from ..agent.goals import validate_goals
+        object.__setattr__(self, 'ai_goals', validate_goals(self.ai_goals))
         from ..cartridges import identify, validate_starter
         cartridge = identify(Path(self.rom_path).read_bytes())
         validate_starter(self.starter, cartridge.version if cartridge else None)
