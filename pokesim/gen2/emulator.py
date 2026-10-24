@@ -354,9 +354,15 @@ class Emulator:
             self._start_agent()
 
     def _start_agent(self):
-        from ..agent.runner import VisionAgentRunner
-        if self.agent_runner is None:
-            self.agent_runner = VisionAgentRunner(self, goals=getattr(self, 'ai_goals', ''))
+        ai_mode = getattr(self, 'ai_mode', 'default')
+        if ai_mode == 'ml':
+            from ..agent.ml_runner import MLAgentRunner
+            if self.agent_runner is None:
+                self.agent_runner = MLAgentRunner(self)
+        else:
+            from ..agent.runner import VisionAgentRunner
+            if self.agent_runner is None:
+                self.agent_runner = VisionAgentRunner(self, goals=getattr(self, 'ai_goals', ''))
         self.agent_runner.start()
 
     def _clear_agent_actions(self):

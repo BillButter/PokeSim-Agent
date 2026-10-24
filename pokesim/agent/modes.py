@@ -7,11 +7,11 @@ from __future__ import annotations
 
 from typing import Any
 
-AI_MODES = ("default", "vision", "gemini", "manual")
-AGENT_MODES = frozenset({"vision", "gemini"})
+AI_MODES = ("default", "vision", "gemini", "ml", "manual")
+AGENT_MODES = frozenset({"vision", "gemini", "ml"})
 
 
 def validate_ai_mode(value: Any) -> str:
     if not isinstance(value, str) or value not in AI_MODES:
-        raise ValueError("AI player must be default, vision, gemini, or manual")
+        raise ValueError("AI player must be default, vision, gemini, ml, or manual")
     return value

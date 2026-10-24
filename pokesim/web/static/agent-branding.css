@@ -1,0 +1,143 @@
+/* ==========================================================================
+   PokeSim Agent - Distinct branding and color overrides
+   
+   Loaded after tokens.css to provide Agent-specific visual identity while
+   maintaining the same layout and usability as the original PokeSim.
+   ========================================================================== */
+
+/* Light theme - Agent-specific accent color (deep teal instead of brown) */
+[data-theme="light"],
+:root {
+  /* Primary accent changed from signal (brown #8A3110) to a teal-blue */
+  --agent-accent: #0D5A7F;
+  --agent-accent-lamp: #1B7FA8;
+  
+  /* Subtle override of link color for Agent */
+  --link: #0D5A7F;
+}
+
+/* Dark theme - Agent-specific accent (bright cyan) */
+[data-theme="dark"] {
+  /* Primary accent changed from signal (orange #F0913F) to bright cyan */
+  --agent-accent: #00D9FF;
+  --agent-accent-lamp: #00B8D4;
+  
+  /* Link color override for Agent */
+  --link: #00D9FF;
+}
+
+/* Agent-specific styling for brandplate */
+.brandplate span span.wordmark {
+  position: relative;
+}
+
+.brandplate span span.wordmark sup {
+  font-size: 0.55em;
+  margin-left: 2px;
+  opacity: 0.85;
+  font-weight: 500;
+}
+
+/* Subtle Agent branding in headers and emphasized elements */
+.page-title h1 {
+  position: relative;
+}
+
+/* Agent panel styling - give ML and vision agents their own visual identity */
+#agent-panel {
+  border-left: 3px solid var(--link);
+}
+
+#agent-panel .column-head p.legend {
+  position: relative;
+}
+
+#agent-panel .column-head p.legend::before {
+  content: "🤖 ";
+  margin-right: 2px;
+  font-size: 0.9em;
+}
+
+/* ML agent specific styling */
+.ml-agent-indicator::before {
+  content: "ML ";
+  color: var(--link);
+  font-weight: 600;
+}
+
+/* Vision agent indicator */
+.vision-agent-indicator::before {
+  content: "👁️ ";
+  margin-right: 2px;
+}
+
+/* Gemini agent indicator */
+.gemini-agent-indicator::before {
+  content: "✨ ";
+  margin-right: 2px;
+}
+
+/* Footer links styling - emphasize both repositories */
+footer.plate-foot .links {
+  display: flex;
+  gap: var(--s4);
+  flex-wrap: wrap;
+}
+
+footer.plate-foot .links a {
+  font-weight: 500;
+  text-decoration: none;
+  padding: var(--s1) var(--s3);
+  border: var(--hair) solid transparent;
+  transition: all var(--t);
+}
+
+footer.plate-foot .links a:hover {
+  border-color: var(--link);
+  color: var(--link);
+}
+
+footer.plate-foot .links a[href*="PokeSim-Agent"] {
+  color: var(--link);
+  font-weight: 600;
+}
+
+footer.plate-foot p a {
+  color: var(--link);
+  font-weight: 500;
+  text-decoration: none;
+}
+
+footer.plate-foot p a:hover {
+  text-decoration: underline;
+}
+
+/* AI mode dropdown styling */
+#settings-ai-mode {
+  font-weight: 500;
+}
+
+#settings-ai-mode option[value="ml"],
+#settings-ai-mode option[value="vision"],
+#settings-ai-mode option[value="gemini"] {
+  font-style: italic;
+}
+
+/* Goals textarea styling */
+#settings-ai-goals {
+  font-family: var(--font-mono);
+  font-size: var(--f-label);
+  line-height: 1.4;
+}
+
+/* Agent decision display styling */
+.agent-block {
+  padding: var(--s3);
+  background: var(--panel-2);
+  border: var(--hair) solid var(--rule);
+}
+
+.agent-block:hover {
+  background: var(--panel);
+  transition: background var(--t);
+}

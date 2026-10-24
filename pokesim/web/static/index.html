@@ -18,6 +18,7 @@
 <link rel="stylesheet" href="${game_base}/static/tokens.css?v=panel-1">
 <link rel="stylesheet" href="${game_base}/static/panel.css?v=stats-1">
 <link rel="stylesheet" href="${game_base}/static/mon-grid.css?v=locks-1">
+<link rel="stylesheet" href="${game_base}/static/agent-branding.css?v=agent-1">
 <link rel="alternate" type="application/atom+xml" title="pokesim events" href="${game_base}/feed.xml">
 <link rel="stylesheet" href="${game_base}/static/types.css?v=glow-2">
 </head>
@@ -26,7 +27,7 @@
 
 <header class="rail">
 <div class="shell rail-inner">
-<a class="brandplate" href="${brand_href}" aria-label="${brand_label}" title="${brand_label}"><span class="mark" aria-hidden="true"></span><span><span class="wordmark">PokeSim</span><span class="model" id="app-version">${app_version}</span></span></a>
+<a class="brandplate" href="${brand_href}" aria-label="${brand_label}" title="${brand_label}"><span class="mark" aria-hidden="true"></span><span><span class="wordmark">PokeSim<span style="font-size: 0.6em; vertical-align: super;">Agent</span></span><span class="model" id="app-version">${app_version}</span></span></a>
 ${library_nav}<nav aria-label="Main navigation"><a href="${game_base}/" aria-current="page">Live</a><a href="${game_base}/pokedex">Pokédex</a><a href="${game_base}/pc">PC</a><a href="${game_base}/trading">Trading</a><a href="${game_base}/journal">Journal</a><a href="${game_base}/stats">Stats</a></nav>
 <span class="connection" id="connection"><i class="lamp" aria-hidden="true"></i><span id="status">Connecting</span></span>${view_link_control}
 </div>
@@ -87,9 +88,9 @@ ${library_nav}<nav aria-label="Main navigation"><a href="${game_base}/" aria-cur
 
 <footer class="plate-foot">
 <div class="shell">
-<p>A small window into a very big adventure.</p>
+<p>A small window into a very big adventure. <a href="https://github.com/afk-sapien/PokeSim" target="_blank" rel="noreferrer">Original PokeSim</a> + AI agents.</p>
 <div class="theme" role="group" aria-label="Colour theme"><button data-theme-choice="light" aria-pressed="false">Light</button><button data-theme-choice="auto" aria-pressed="false">Auto</button><button data-theme-choice="dark" aria-pressed="false">Dark</button></div>
-<div class="links"><button id="restart" class="restart-link">Restart run</button><a href="${game_base}/feed.xml">Atom feed</a><a href="https://github.com/afk-sapien/PokeSim" target="_blank" rel="noreferrer">GitHub</a></div>
+<div class="links"><button id="restart" class="restart-link">Restart run</button><a href="${game_base}/feed.xml">Atom feed</a><a href="https://github.com/BillButter/PokeSim-Agent" target="_blank" rel="noreferrer">PokeSim Agent</a><a href="https://github.com/afk-sapien/PokeSim" target="_blank" rel="noreferrer">Original PokeSim</a></div>
 </div>
 </footer>
 

@@ -101,7 +101,7 @@ def test_adventure_forms_order_the_ai_players():
         match = re.search(rf'id="{element_id}"(.*?)</select>', html, re.S)
         assert match, element_id
         values = re.findall(r'<option value="([^"]+)"', match.group(1))
-        assert values == ['default', 'vision', 'gemini', 'manual']
+        assert values == ['default', 'vision', 'gemini', 'ml', 'manual']
 
 
 def test_quadlet_public_url_matches_its_published_address():
