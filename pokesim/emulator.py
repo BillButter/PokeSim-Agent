@@ -250,7 +250,7 @@ class Emulator:
             self.manual_mode = True
         else:
             self.manual_mode = False
-        if value == 'vision':
+        if value in ('vision', 'gemini', 'ml'):
             self._start_agent()
         self.input_epoch += 1
         return {'ai_mode': value}

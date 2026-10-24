@@ -396,7 +396,7 @@ class Emulator:
         self.ai_mode = value
         self._clear_agent_actions()
         self.manual_mode = value == 'manual'
-        if value == 'vision':
+        if value in ('vision', 'gemini', 'ml'):
             self._start_agent()
         return {'ai_mode': value}
 
