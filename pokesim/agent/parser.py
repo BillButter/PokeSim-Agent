@@ -120,6 +120,31 @@ def extract_json(text: str) -> Any:
             return candidate
     if candidates:
         return candidates[0]
+    
+    # For local models (like moondream) that return plain text instead of JSON,
+    # try to extract button presses from the response
+    text_lower = cleaned.lower()
+    buttons_found = []
+    for button in BUTTONS:
+        if button in text_lower:
+            buttons_found.append(button)
+    
+    if buttons_found:
+        # Model described an action in plain text, convert to JSON structure
+        return {
+            "thought": cleaned[:200],
+            "actions": [{"buttons": [buttons_found[0]], "frames": 8}],
+            "plan": ["Continue from model guidance"],
+        }
+    
+    # Last resort: wait action if we got text but no button words
+    if len(cleaned) > 10:
+        return {
+            "thought": cleaned[:200],
+            "actions": [{"buttons": [], "frames": 4}],
+            "plan": ["Waiting for clearer input"],
+        }
+    
     raise ParseError("No JSON object found in the model response", text)
 
 
